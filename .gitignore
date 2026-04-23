@@ -1,6 +1,6 @@
 .gocache/
 .gomodcache/
-*.exe
 *.exe~
+resultados_busca/
 resultado_busca_*.txt
 teste_cli/
