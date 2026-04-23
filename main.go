@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,6 +34,12 @@ type SearchConfig struct {
 	Terms           []string
 	ExtensionFilter map[string]struct{}
 	SearchAllFiles  bool
+}
+
+type SearchResult struct {
+	Matches      []Match
+	ScannedFiles int
+	ReportPath   string
 }
 
 func main() {
@@ -69,22 +76,19 @@ func main() {
 		SearchAllFiles:  searchAllFiles,
 	}
 
-	matches, scannedFiles, err := runSearch(config)
+	result, err := runSearch(config)
 	if err != nil {
 		exitWithMessage(fmt.Sprintf("Erro durante a busca: %v", err))
 	}
 
-	reportPath, err := saveReport(matches)
-	if err != nil {
-		exitWithMessage(fmt.Sprintf("Nao foi possivel salvar o relatorio: %v", err))
-	}
-
 	fmt.Println()
 	fmt.Println("Busca concluida.")
-	fmt.Printf("Arquivos analisados: %d\n", scannedFiles)
-	fmt.Printf("Ocorrencias encontradas: %d\n", len(matches))
+	fmt.Printf("Arquivos analisados: %d\n", result.ScannedFiles)
+	fmt.Printf("Ocorrencias encontradas: %d\n", len(result.Matches))
 	fmt.Printf("Tempo total: %s\n", time.Since(start).Round(time.Millisecond))
-	fmt.Printf("Relatorio salvo em: %s\n", reportPath)
+	fmt.Printf("Relatorio salvo em: %s\n", result.ReportPath)
+	showReport(result.ReportPath)
+	waitForExit(reader)
 }
 
 func prompt(reader *bufio.Reader, label string) string {
@@ -167,11 +171,16 @@ func parseExtensions(raw string) map[string]struct{} {
 	return filter
 }
 
-func runSearch(config SearchConfig) ([]Match, int, error) {
+func runSearch(config SearchConfig) (SearchResult, error) {
 	workerCount := calculateWorkerCount(config.Mode)
 	jobs := make(chan string, workerCount*4)
 	results := make(chan []Match, workerCount)
 	errorsCh := make(chan string, workerCount)
+	reporter, err := createReport(config)
+	if err != nil {
+		return SearchResult{}, err
+	}
+	defer reporter.Close()
 
 	var scannedFiles atomic.Int64
 	var workers sync.WaitGroup
@@ -189,6 +198,10 @@ func runSearch(config SearchConfig) ([]Match, int, error) {
 			matchMu.Lock()
 			matches = append(matches, batch...)
 			matchMu.Unlock()
+			if err := reporter.Append(batch); err != nil {
+				errorsCh <- fmt.Sprintf("Falha ao salvar no relatorio: %v", err)
+			}
+			showFound(batch)
 		}
 	}()
 
@@ -242,7 +255,16 @@ func runSearch(config SearchConfig) ([]Match, int, error) {
 
 	totalScanned := int(scannedFiles.Load())
 	fmt.Printf("\rAnalisando arquivos... %d | workers: %d\n", totalScanned, workerCount)
-	return matches, totalScanned, walkErr
+	if len(matches) == 0 {
+		if err := reporter.WriteNoMatches(); err != nil {
+			return SearchResult{}, err
+		}
+	}
+	return SearchResult{
+		Matches:      matches,
+		ScannedFiles: totalScanned,
+		ReportPath:   reporter.Path,
+	}, walkErr
 }
 
 func shouldProcessFile(path string, config SearchConfig) bool {
@@ -335,43 +357,156 @@ func searchInFile(path string, terms []string) ([]Match, error) {
 	return matches, nil
 }
 
-func saveReport(matches []Match) (string, error) {
-	fileName := fmt.Sprintf("resultado_busca_%s.txt", time.Now().Format("20060102_150405"))
-	filePath, err := filepath.Abs(fileName)
+type ReportWriter struct {
+	File     *os.File
+	Writer   *bufio.Writer
+	Path     string
+	mu       sync.Mutex
+	hasMatch bool
+}
+
+func createReport(config SearchConfig) (*ReportWriter, error) {
+	reportDir := "resultados_busca"
+	if err := os.MkdirAll(reportDir, 0o755); err != nil {
+		return nil, err
+	}
+
+	timestamp := strings.ReplaceAll(time.Now().Format("20060102_150405.000"), ".", "_")
+	fileName := fmt.Sprintf("resultado_busca_%s.txt", timestamp)
+	filePath, err := filepath.Abs(filepath.Join(reportDir, fileName))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	file, err := os.Create(filePath)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	defer file.Close()
 
 	writer := bufio.NewWriter(file)
-	defer writer.Flush()
-
-	if len(matches) == 0 {
-		if _, err := writer.WriteString("Nenhuma ocorrencia encontrada.\n"); err != nil {
-			return "", err
-		}
-		return filePath, nil
+	reporter := &ReportWriter{
+		File:   file,
+		Writer: writer,
+		Path:   filePath,
 	}
+
+	header := []string{
+		fmt.Sprintf("Busca iniciada em: %s", time.Now().Format("2006-01-02 15:04:05.000")),
+		fmt.Sprintf("Pasta base: %s", config.BaseDir),
+		fmt.Sprintf("Modo: %s", modeLabel(config.Mode)),
+		fmt.Sprintf("Termos: %s", strings.Join(config.Terms, "; ")),
+	}
+
+	if config.SearchAllFiles {
+		header = append(header, "Extensoes: todas")
+	} else {
+		header = append(header, fmt.Sprintf("Extensoes: %s", strings.Join(extensionList(config.ExtensionFilter), "; ")))
+	}
+	header = append(header, "")
+
+	for _, line := range header {
+		if _, err := writer.WriteString(line + "\n"); err != nil {
+			file.Close()
+			return nil, err
+		}
+	}
+	if err := writer.Flush(); err != nil {
+		file.Close()
+		return nil, err
+	}
+
+	return reporter, nil
+}
+
+func (r *ReportWriter) Append(matches []Match) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	for _, match := range matches {
-		line := fmt.Sprintf("Arquivo: %s", match.Path)
-		if match.Kind == "conteudo" {
-			line = fmt.Sprintf("%s | Linha: %d | Trecho: %s", line, match.Line, match.Text)
-		} else {
-			line = fmt.Sprintf("%s | Correspondencia no nome do arquivo", line)
+		line := formatMatch(match)
+		if _, err := r.Writer.WriteString(line + "\n"); err != nil {
+			return err
 		}
+		r.hasMatch = true
+	}
+	return r.Writer.Flush()
+}
 
-		if _, err := writer.WriteString(line + "\n"); err != nil {
-			return "", err
-		}
+func (r *ReportWriter) WriteNoMatches() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.hasMatch {
+		return nil
+	}
+	if _, err := r.Writer.WriteString("Nenhuma ocorrencia encontrada.\n"); err != nil {
+		return err
+	}
+	return r.Writer.Flush()
+}
+
+func (r *ReportWriter) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.Writer.Flush(); err != nil {
+		_ = r.File.Close()
+		return err
+	}
+	return r.File.Close()
+}
+
+func formatMatch(match Match) string {
+	line := fmt.Sprintf("Arquivo: %s", match.Path)
+	if match.Kind == "conteudo" {
+		return fmt.Sprintf("%s | Linha: %d | Trecho: %s", line, match.Line, match.Text)
+	}
+	return fmt.Sprintf("%s | Correspondencia no nome do arquivo", line)
+}
+
+func modeLabel(mode SearchMode) string {
+	switch mode {
+	case ModeName:
+		return "nome do arquivo"
+	case ModeContent:
+		return "conteudo do arquivo"
+	case ModeBoth:
+		return "nome e conteudo"
+	default:
+		return "desconhecido"
+	}
+}
+
+func extensionList(filter map[string]struct{}) []string {
+	list := make([]string, 0, len(filter))
+	for ext := range filter {
+		list = append(list, ext)
+	}
+	sort.Strings(list)
+	return list
+}
+
+func showFound(batch []Match) {
+	for _, match := range batch {
+		fmt.Printf("\nEncontrado: %s\n", formatMatch(match))
+	}
+}
+
+func showReport(reportPath string) {
+	content, err := os.ReadFile(reportPath)
+	if err != nil {
+		fmt.Printf("Nao foi possivel exibir o relatorio: %v\n", err)
+		return
 	}
 
-	return filePath, nil
+	fmt.Println()
+	fmt.Println("Relatorio gerado:")
+	fmt.Println(string(content))
+}
+
+func waitForExit(reader *bufio.Reader) {
+	fmt.Print("Pressione Enter para sair...")
+	_, _ = reader.ReadString('\n')
 }
 
 func calculateWorkerCount(mode SearchMode) int {
