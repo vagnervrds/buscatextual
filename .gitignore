@@ -2,6 +2,7 @@
 .gomodcache/
 *.exe~
 *.exe
+!buscatextual.exe
 *.syso
 build.json
 resultados_busca/

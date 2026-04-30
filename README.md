@@ -58,9 +58,12 @@ Assim, quem baixar do GitHub pode:
 - usar o `.exe` direto
 - ou compilar a partir do codigo
 
-## Como usar o executavel
+## Como usar
 
-Baixe `buscatextual.exe` e execute.
+Você tem duas opções principais:
+
+1. **Baixar e usar direto:** Baixe o arquivo `buscatextual.exe` disponível na raiz deste repositório e execute-o com dois cliques. Nenhuma instalação é necessária.
+2. **Compilar localmente:** Baixe o código fonte (ou faça o clone do repositório) e compile o executável você mesmo, garantindo total transparência do código que está rodando.
 
 O fluxo sera:
 
