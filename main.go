@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -13,6 +14,8 @@ import (
 	"time"
 	"syscall"
 	"unsafe"
+
+	"go.etcd.io/bbolt"
 )
 
 var BuildVersion string = "dev"
@@ -57,27 +60,62 @@ func main() {
 	setConsoleTitle("BuscaTextual " + BuildVersion)
 	reader := bufio.NewReader(os.Stdin)
 
+	if err := initDB(); err != nil {
+		fmt.Printf("Aviso: Nao foi possivel abrir o banco de dados 'buscatextual.db': %v\n", err)
+	} else {
+		defer closeDB()
+	}
+
 	fmt.Println("Busca Textual - Build:", BuildVersion)
-	baseDir := prompt(reader, "Informe o caminho da pasta para buscar: ")
+
+	for {
+		fmt.Println("\nMenu Principal:")
+		fmt.Println("1 - Buscar (Disco - Nome e Conteudo)")
+		fmt.Println("2 - Busca Rapida (Banco de Dados - Somente Nomes)")
+		fmt.Println("3 - Indexar Pasta (Atualizar Banco)")
+		fmt.Println("4 - Sair")
+
+		opcao := prompt(reader, "Escolha uma opcao: ")
+
+		switch opcao {
+		case "1":
+			realizarBusca(reader)
+		case "2":
+			realizarBuscaRapida(reader)
+		case "3":
+			realizarIndexacao(reader)
+		case "4":
+			return
+		default:
+			fmt.Println("Opcao invalida.")
+		}
+	}
+}
+
+func realizarBusca(reader *bufio.Reader) {
+	baseDir := prompt(reader, "\nInforme o caminho da pasta para buscar: ")
 	baseDir = strings.TrimSpace(baseDir)
 	if baseDir == "" {
-		exitWithMessage("Pasta nao informada.")
+		fmt.Println("Pasta nao informada.")
+		return
 	}
 
 	info, err := os.Stat(baseDir)
 	if err != nil || !info.IsDir() {
-		exitWithMessage("Pasta invalida ou inacessivel.")
+		fmt.Println("Pasta invalida ou inacessivel.")
+		return
 	}
 
 	mode := promptMode(reader)
 	terms := promptTerms(reader)
 	searchAllFiles, extensionFilter := promptExtensions(reader)
 	if len(terms) == 0 {
-		exitWithMessage("Nenhum termo de busca valido foi informado.")
+		fmt.Println("Nenhum termo de busca valido foi informado.")
+		return
 	}
 
 	fmt.Println()
-	fmt.Println("Iniciando busca recursiva...")
+	fmt.Println("Iniciando busca no disco e atualizando banco...")
 
 	start := time.Now()
 	config := SearchConfig{
@@ -90,7 +128,8 @@ func main() {
 
 	result, err := runSearch(config)
 	if err != nil {
-		exitWithMessage(fmt.Sprintf("Erro durante a busca: %v", err))
+		fmt.Printf("Erro durante a busca: %v\n", err)
+		return
 	}
 
 	fmt.Println()
@@ -100,7 +139,112 @@ func main() {
 	fmt.Printf("Tempo total: %s\n", time.Since(start).Round(time.Millisecond))
 	fmt.Printf("Relatorio salvo em: %s\n", result.ReportPath)
 	showReport(result.ReportPath)
-	waitForExit(reader)
+
+	postSearchMenu(reader, result.ReportPath)
+}
+
+func realizarBuscaRapida(reader *bufio.Reader) {
+	terms := promptTerms(reader)
+	if len(terms) == 0 {
+		fmt.Println("Nenhum termo informado.")
+		return
+	}
+
+	fmt.Println("Buscando no banco de dados...")
+	start := time.Now()
+	matches := searchFilenamesInDB(terms)
+
+	fmt.Printf("\nBusca concluida em %s.\n", time.Since(start).Round(time.Millisecond))
+	fmt.Printf("Ocorrencias encontradas no banco: %d\n", len(matches))
+
+	if len(matches) > 0 {
+		// Gera um relatório simples para a busca rápida
+		config := SearchConfig{BaseDir: "Banco de Dados", Terms: terms, Mode: ModeName, SearchAllFiles: true}
+		reporter, _ := createReport(config)
+		if reporter != nil {
+			_ = reporter.Append(matches)
+			reporter.Close()
+			fmt.Printf("Relatorio salvo em: %s\n", reporter.Path)
+			postSearchMenu(reader, reporter.Path)
+		}
+	}
+}
+
+func realizarIndexacao(reader *bufio.Reader) {
+	baseDir := prompt(reader, "\nInforme o caminho da pasta para indexar: ")
+	baseDir = strings.TrimSpace(baseDir)
+	if baseDir == "" {
+		fmt.Println("Pasta nao informada.")
+		return
+	}
+
+	info, err := os.Stat(baseDir)
+	if err != nil || !info.IsDir() {
+		fmt.Println("Pasta invalida ou inacessivel.")
+		return
+	}
+
+	fmt.Println("Iniciando indexacao...")
+	start := time.Now()
+
+	count := 0
+	// Usa uma única transação para indexar em lote (muito mais rápido)
+	_ = db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("Files"))
+		return filepath.WalkDir(baseDir, func(path string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil { return nil }
+			if !d.IsDir() {
+				fileInfo, err := d.Info()
+				if err == nil {
+					_ = putIndexHelper(b, path, fileInfo.Size(), fileInfo.ModTime().Format(time.RFC3339Nano))
+					count++
+					if count%500 == 0 {
+						fmt.Printf("\rArquivos processados: %d", count)
+					}
+				}
+			}
+			return nil
+		})
+	})
+
+	fmt.Printf("\rIndexacao concluida! %d arquivos processados em %s.\n", count, time.Since(start).Round(time.Second))
+}
+
+func postSearchMenu(reader *bufio.Reader, reportPath string) bool {
+	for {
+		fmt.Println()
+		fmt.Println("O que deseja fazer agora?")
+		fmt.Println("1 - Abrir arquivo de relatorio")
+		fmt.Println("2 - Voltar ao menu principal")
+		fmt.Println("3 - Sair")
+
+		switch prompt(reader, "Escolha uma opcao (1/2/3): ") {
+		case "1":
+			openFile(reportPath)
+		case "2":
+			return true
+		case "3":
+			return false
+		default:
+			fmt.Println("Opcao invalida.")
+		}
+	}
+}
+
+func openFile(path string) {
+	var err error
+	switch runtime.GOOS {
+	case "windows":
+		err = exec.Command("cmd", "/c", "start", "", path).Run()
+	case "darwin":
+		err = exec.Command("open", path).Run()
+	default: // linux e outros
+		err = exec.Command("xdg-open", path).Run()
+	}
+
+	if err != nil {
+		fmt.Printf("Erro ao abrir o arquivo: %v\n", err)
+	}
 }
 
 func prompt(reader *bufio.Reader, label string) string {
@@ -291,6 +435,18 @@ func shouldProcessFile(path string, config SearchConfig) bool {
 func processFile(path string, mode SearchMode, terms []string) ([]Match, error) {
 	var matches []Match
 
+	// Indexação automática durante a busca
+	info, err := os.Stat(path)
+	if err == nil {
+		_ = db.Update(func(tx *bbolt.Tx) error {
+			b := tx.Bucket([]byte("Files"))
+			if b != nil {
+				return putIndexHelper(b, path, info.Size(), info.ModTime().Format(time.RFC3339Nano))
+			}
+			return nil
+		})
+	}
+
 	if mode == ModeName || mode == ModeBoth {
 		nameMatches := searchInFileName(path, terms)
 		matches = append(matches, nameMatches...)
@@ -384,7 +540,7 @@ func createReport(config SearchConfig) (*ReportWriter, error) {
 	}
 
 	timestamp := strings.ReplaceAll(time.Now().Format("20060102_150405.000"), ".", "_")
-	fileName := fmt.Sprintf("resultado_busca_%s.txt", timestamp)
+	fileName := fmt.Sprintf("resultado_busca_%s.toml", timestamp)
 	filePath, err := filepath.Abs(filepath.Join(reportDir, fileName))
 	if err != nil {
 		return nil, err
@@ -402,26 +558,22 @@ func createReport(config SearchConfig) (*ReportWriter, error) {
 		Path:   filePath,
 	}
 
-	header := []string{
-		fmt.Sprintf("Busca iniciada em: %s", time.Now().Format("2006-01-02 15:04:05.000")),
-		fmt.Sprintf("Pasta base: %s", config.BaseDir),
-		fmt.Sprintf("Modo: %s", modeLabel(config.Mode)),
-		fmt.Sprintf("Termos: %s", strings.Join(config.Terms, "; ")),
-	}
+	// Cabeçalho em formato TOML
+	fmt.Fprintf(writer, "[metadados]\n")
+	fmt.Fprintf(writer, "data_inicio = %q\n", time.Now().Format("2006-01-02 15:04:05.000"))
+	fmt.Fprintf(writer, "pasta_base = %q\n", config.BaseDir)
+	fmt.Fprintf(writer, "modo = %q\n", modeLabel(config.Mode))
+	
+	fmt.Fprintf(writer, "termos = [%s]\n", formatTOMLStringList(config.Terms))
 
 	if config.SearchAllFiles {
-		header = append(header, "Extensoes: todas")
+		fmt.Fprintf(writer, "extensoes = \"todas\"\n")
 	} else {
-		header = append(header, fmt.Sprintf("Extensoes: %s", strings.Join(extensionList(config.ExtensionFilter), "; ")))
+		exts := extensionList(config.ExtensionFilter)
+		fmt.Fprintf(writer, "extensoes = [%s]\n", formatTOMLStringList(exts))
 	}
-	header = append(header, "")
+	fmt.Fprintf(writer, "\n")
 
-	for _, line := range header {
-		if _, err := writer.WriteString(line + "\n"); err != nil {
-			file.Close()
-			return nil, err
-		}
-	}
 	if err := writer.Flush(); err != nil {
 		file.Close()
 		return nil, err
@@ -435,10 +587,14 @@ func (r *ReportWriter) Append(matches []Match) error {
 	defer r.mu.Unlock()
 
 	for _, match := range matches {
-		line := formatMatch(match)
-		if _, err := r.Writer.WriteString(line + "\n"); err != nil {
-			return err
+		fmt.Fprintf(r.Writer, "[[resultados]]\n")
+		fmt.Fprintf(r.Writer, "arquivo = %q\n", match.Path)
+		fmt.Fprintf(r.Writer, "tipo = %q\n", match.Kind)
+		if match.Kind == "conteudo" {
+			fmt.Fprintf(r.Writer, "linha = %d\n", match.Line)
+			fmt.Fprintf(r.Writer, "trecho = %q\n", match.Text)
 		}
+		fmt.Fprintf(r.Writer, "\n")
 		r.hasMatch = true
 	}
 	return r.Writer.Flush()
@@ -451,7 +607,7 @@ func (r *ReportWriter) WriteNoMatches() error {
 	if r.hasMatch {
 		return nil
 	}
-	if _, err := r.Writer.WriteString("Nenhuma ocorrencia encontrada.\n"); err != nil {
+	if _, err := r.Writer.WriteString("# Nenhuma ocorrencia encontrada.\nresultados = []\n"); err != nil {
 		return err
 	}
 	return r.Writer.Flush()
@@ -516,11 +672,6 @@ func showReport(reportPath string) {
 	fmt.Println(string(content))
 }
 
-func waitForExit(reader *bufio.Reader) {
-	fmt.Print("Pressione Enter para sair...")
-	_, _ = reader.ReadString('\n')
-}
-
 func calculateWorkerCount(mode SearchMode) int {
 	cpuCount := runtime.NumCPU()
 	if cpuCount < 1 {
@@ -561,4 +712,15 @@ func showProgress(scannedFiles *atomic.Int64, workerCount int, done <-chan struc
 func exitWithMessage(message string) {
 	fmt.Println(message)
 	os.Exit(1)
+}
+
+func formatTOMLStringList(list []string) string {
+	if len(list) == 0 {
+		return ""
+	}
+	quoted := make([]string, len(list))
+	for i, s := range list {
+		quoted[i] = fmt.Sprintf("%q", s)
+	}
+	return strings.Join(quoted, ", ")
 }

@@ -1,6 +1,7 @@
 .gocache/
 .gomodcache/
 *.exe~
+*.db
 *.exe
 !buscatextual.exe
 *.syso

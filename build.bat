@@ -21,8 +21,10 @@ echo Gerando buscatextual.exe...
 go build -ldflags "-X main.BuildVersion=%BUILD_NUM%" -o buscatextual.exe .
 if errorlevel 1 (
     echo Falha ao gerar o executavel.
+    pause
     exit /b 1
 )
 
 echo Executavel criado em "%ROOT%buscatextual.exe"
+pause
 endlocal
