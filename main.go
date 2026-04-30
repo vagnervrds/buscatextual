@@ -11,7 +11,18 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"syscall"
+	"unsafe"
 )
+
+var BuildVersion string = "dev"
+
+func setConsoleTitle(title string) {
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	setConsoleTitleProc := kernel32.NewProc("SetConsoleTitleW")
+	titlePtr, _ := syscall.UTF16PtrFromString(title)
+	setConsoleTitleProc.Call(uintptr(unsafe.Pointer(titlePtr)))
+}
 
 type SearchMode int
 
@@ -43,9 +54,10 @@ type SearchResult struct {
 }
 
 func main() {
+	setConsoleTitle("BuscaTextual " + BuildVersion)
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Println("Busca Textual")
+	fmt.Println("Busca Textual - Build:", BuildVersion)
 	baseDir := prompt(reader, "Informe o caminho da pasta para buscar: ")
 	baseDir = strings.TrimSpace(baseDir)
 	if baseDir == "" {
