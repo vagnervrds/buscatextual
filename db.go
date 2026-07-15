@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -26,7 +27,10 @@ func initDB() error {
 	}
 
 	return db.Update(func(tx *bbolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte("Files"))
+		if _, err := tx.CreateBucketIfNotExists([]byte("Files")); err != nil {
+			return err
+		}
+		_, err = tx.CreateBucketIfNotExists([]byte("DiskConfig"))
 		return err
 	})
 }
@@ -82,6 +86,39 @@ func putIndexHelper(b *bbolt.Bucket, path string, size int64, modTimeStr string)
 	}
 
 	return b.Put([]byte(path), buf)
+}
+
+func getDiskOptimalThreads(diskID string) int {
+	var threads int
+	_ = db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("DiskConfig"))
+		if b == nil {
+			return nil
+		}
+		v := b.Get([]byte(diskID))
+		if v != nil {
+			var val int
+			if err := json.Unmarshal(v, &val); err == nil {
+				threads = val
+			}
+		}
+		return nil
+	})
+	return threads
+}
+
+func saveDiskOptimalThreads(diskID string, threads int) error {
+	return db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("DiskConfig"))
+		if b == nil {
+			return fmt.Errorf("bucket DiskConfig nao existe")
+		}
+		buf, err := json.Marshal(threads)
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte(diskID), buf)
+	})
 }
 
 func closeDB() {

@@ -11,20 +11,66 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 	"syscall"
+	"time"
 	"unsafe"
-
-	"go.etcd.io/bbolt"
 )
 
 var BuildVersion string = "dev"
 
+// Constantes de cores ANSI
+const (
+	Reset   = "\033[0m"
+	Red     = "\033[31m"
+	Green   = "\033[32m"
+	Yellow  = "\033[33m"
+	Blue    = "\033[34m"
+	Magenta = "\033[35m"
+	Cyan    = "\033[36m"
+	White   = "\033[37m"
+	Bold    = "\033[1m"
+
+	// Cores do Tema
+	ThemeCyan   = "\033[36m"
+	ThemeYellow = "\033[33m"
+	ThemeGreen  = "\033[32m"
+)
+
+func initConsole() {
+	setConsoleTitle("BuscaTextual " + BuildVersion)
+	enableANSI()
+}
+
 func setConsoleTitle(title string) {
+	if runtime.GOOS != "windows" {
+		return
+	}
 	kernel32 := syscall.NewLazyDLL("kernel32.dll")
 	setConsoleTitleProc := kernel32.NewProc("SetConsoleTitleW")
 	titlePtr, _ := syscall.UTF16PtrFromString(title)
 	setConsoleTitleProc.Call(uintptr(unsafe.Pointer(titlePtr)))
+}
+
+func enableANSI() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	procGetConsoleMode := kernel32.NewProc("GetConsoleMode")
+	procSetConsoleMode := kernel32.NewProc("SetConsoleMode")
+
+	stdout, err := syscall.GetStdHandle(syscall.STD_OUTPUT_HANDLE)
+	if err != nil {
+		return
+	}
+
+	var mode uint32
+	r, _, _ := procGetConsoleMode.Call(uintptr(stdout), uintptr(unsafe.Pointer(&mode)))
+	if r != 0 {
+		// ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+		mode |= 0x0004
+		procSetConsoleMode.Call(uintptr(stdout), uintptr(mode))
+	}
 }
 
 type SearchMode int
@@ -56,66 +102,147 @@ type SearchResult struct {
 	ReportPath   string
 }
 
+type interval struct {
+	start int
+	end   int
+}
+
+// highlightTerms destaca em vermelho negrito os termos buscados no texto
+func highlightTerms(text string, terms []string) string {
+	if len(terms) == 0 {
+		return text
+	}
+	var intervals []interval
+	lowerText := strings.ToLower(text)
+	for _, term := range terms {
+		termLower := strings.ToLower(term)
+		if termLower == "" {
+			continue
+		}
+		pos := 0
+		for {
+			idx := strings.Index(lowerText[pos:], termLower)
+			if idx == -1 {
+				break
+			}
+			start := pos + idx
+			end := start + len(termLower)
+			intervals = append(intervals, interval{start: start, end: end})
+			pos = start + len(termLower)
+		}
+	}
+
+	if len(intervals) == 0 {
+		return text
+	}
+
+	// Ordena os intervalos pelo início
+	sort.Slice(intervals, func(i, j int) bool {
+		if intervals[i].start == intervals[j].start {
+			return intervals[i].end > intervals[j].end
+		}
+		return intervals[i].start < intervals[j].start
+	})
+
+	// Mescla intervalos que se sobrepõem
+	var merged []interval
+	for _, current := range intervals {
+		if len(merged) == 0 {
+			merged = append(merged, current)
+			continue
+		}
+		last := &merged[len(merged)-1]
+		if current.start <= last.end {
+			if current.end > last.end {
+				last.end = current.end
+			}
+		} else {
+			merged = append(merged, current)
+		}
+	}
+
+	// Reconstrói a string com cores ANSI
+	var sb strings.Builder
+	lastIdx := 0
+	for _, inter := range merged {
+		sb.WriteString(text[lastIdx:inter.start])
+		sb.WriteString("\033[1;31m") // Bold Red
+		sb.WriteString(text[inter.start:inter.end])
+		sb.WriteString("\033[0m")
+		lastIdx = inter.end
+	}
+	sb.WriteString(text[lastIdx:])
+	return sb.String()
+}
+
 func main() {
-	setConsoleTitle("BuscaTextual " + BuildVersion)
+	initConsole()
 	reader := bufio.NewReader(os.Stdin)
 
 	if err := initDB(); err != nil {
-		fmt.Printf("Aviso: Nao foi possivel abrir o banco de dados 'buscatextual.db': %v\n", err)
+		fmt.Printf(Red+"Aviso: Nao foi possivel abrir o banco de dados 'buscatextual.db': %v\n"+Reset, err)
 	} else {
 		defer closeDB()
 	}
 
-	fmt.Println("Busca Textual - Build:", BuildVersion)
-
 	for {
-		fmt.Println("\nMenu Principal:")
-		fmt.Println("1 - Buscar (Disco - Nome e Conteudo)")
-		fmt.Println("2 - Busca Rapida (Banco de Dados - Somente Nomes)")
-		fmt.Println("3 - Indexar Pasta (Atualizar Banco)")
-		fmt.Println("4 - Sair")
+		fmt.Println()
+		fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
+		fmt.Printf("   "+Bold+ThemeCyan+"Busca Textual"+Reset+" - Versao/Build: "+Bold+ThemeGreen+"%s\n"+Reset, BuildVersion)
+		fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
+		fmt.Println(Bold + " Menu Principal:" + Reset)
+		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Busca Rapida (%sBanco de Dados%s - Somente Nomes)\n", Bold, Reset)
+		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Buscar (%sDisco%s - Nome e Conteudo)\n", Bold, Reset)
+		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Indexar Pasta (Atualizar Banco)\n")
+		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Sair\n")
+		fmt.Println(Bold + ThemeCyan + "--------------------------------------------------" + Reset)
 
-		opcao := prompt(reader, "Escolha uma opcao: ")
+		opcao := prompt(reader, Bold+"Escolha uma opcao: "+Reset)
 
 		switch opcao {
 		case "1":
-			realizarBusca(reader)
+			if realizarBuscaRapida(reader) {
+				return
+			}
 		case "2":
-			realizarBuscaRapida(reader)
+			if realizarBusca(reader) {
+				return
+			}
 		case "3":
 			realizarIndexacao(reader)
 		case "4":
+			fmt.Println(Bold + ThemeGreen + "\nObrigado por usar o BuscaTextual! Ate logo." + Reset)
 			return
 		default:
-			fmt.Println("Opcao invalida.")
+			fmt.Println(Red + "Opcao invalida. Tente novamente." + Reset)
 		}
 	}
 }
 
-func realizarBusca(reader *bufio.Reader) {
-	baseDir := prompt(reader, "\nInforme o caminho da pasta para buscar: ")
+func realizarBusca(reader *bufio.Reader) bool {
+	baseDir := prompt(reader, "\n"+Bold+"Informe o caminho da pasta para buscar: "+Reset)
 	baseDir = strings.TrimSpace(baseDir)
 	if baseDir == "" {
-		fmt.Println("Pasta nao informada.")
-		return
+		fmt.Println(Red + "Pasta nao informada." + Reset)
+		return false
 	}
 
 	info, err := os.Stat(baseDir)
 	if err != nil || !info.IsDir() {
-		fmt.Println("Pasta invalida ou inacessivel.")
-		return
+		fmt.Println(Red + "Pasta invalida ou inacessivel." + Reset)
+		return false
 	}
 
 	mode := promptMode(reader)
 	terms := promptTerms(reader)
 	searchAllFiles, extensionFilter := promptExtensions(reader)
 	if len(terms) == 0 {
-		fmt.Println("Nenhum termo de busca valido foi informado.")
-		return
+		fmt.Println(Red + "Nenhum termo de busca valido foi informado." + Reset)
+		return false
 	}
 
 	fmt.Println()
-	fmt.Println("Iniciando busca no disco e atualizando banco...")
+	fmt.Println(Bold + ThemeYellow + "Iniciando busca no disco e atualizando banco assincronamente..." + Reset)
 
 	start := time.Now()
 	config := SearchConfig{
@@ -128,107 +255,410 @@ func realizarBusca(reader *bufio.Reader) {
 
 	result, err := runSearch(config)
 	if err != nil {
-		fmt.Printf("Erro durante a busca: %v\n", err)
-		return
+		fmt.Printf(Red+"Erro durante a busca: %v\n"+Reset, err)
+		return false
 	}
 
 	fmt.Println()
-	fmt.Println("Busca concluida.")
-	fmt.Printf("Arquivos analisados: %d\n", result.ScannedFiles)
-	fmt.Printf("Ocorrencias encontradas: %d\n", len(result.Matches))
-	fmt.Printf("Tempo total: %s\n", time.Since(start).Round(time.Millisecond))
-	fmt.Printf("Relatorio salvo em: %s\n", result.ReportPath)
+	fmt.Println(Bold + ThemeGreen + "Busca concluida." + Reset)
+	fmt.Printf("Arquivos analisados: %s%d%s\n", ThemeCyan, result.ScannedFiles, Reset)
+	fmt.Printf("Ocorrencias encontradas: %s%d%s\n", ThemeGreen, len(result.Matches), Reset)
+	fmt.Printf("Tempo total: %s%s%s\n", ThemeYellow, time.Since(start).Round(time.Millisecond), Reset)
+	fmt.Printf("Relatorio salvo em: %s%s%s\n", ThemeCyan, result.ReportPath, Reset)
 	showReport(result.ReportPath)
 
-	postSearchMenu(reader, result.ReportPath)
+	return !postSearchMenu(reader, result.ReportPath, result.Matches)
 }
 
-func realizarBuscaRapida(reader *bufio.Reader) {
+func realizarBuscaRapida(reader *bufio.Reader) bool {
 	terms := promptTerms(reader)
 	if len(terms) == 0 {
-		fmt.Println("Nenhum termo informado.")
-		return
+		fmt.Println(Red + "Nenhum termo informado." + Reset)
+		return false
 	}
 
-	fmt.Println("Buscando no banco de dados...")
+	fmt.Println(Bold + ThemeYellow + "Buscando no banco de dados..." + Reset)
 	start := time.Now()
 	matches := searchFilenamesInDB(terms)
 
-	fmt.Printf("\nBusca concluida em %s.\n", time.Since(start).Round(time.Millisecond))
-	fmt.Printf("Ocorrencias encontradas no banco: %d\n", len(matches))
+	fmt.Printf("\nBusca concluida em %s%s%s.\n", ThemeYellow, time.Since(start).Round(time.Millisecond), Reset)
+	fmt.Printf("Ocorrencias encontradas no banco: %s%d%s\n", ThemeGreen, len(matches), Reset)
 
 	if len(matches) > 0 {
-		// Gera um relatório simples para a busca rápida
 		config := SearchConfig{BaseDir: "Banco de Dados", Terms: terms, Mode: ModeName, SearchAllFiles: true}
 		reporter, _ := createReport(config)
 		if reporter != nil {
 			_ = reporter.Append(matches)
 			reporter.Close()
-			fmt.Printf("Relatorio salvo em: %s\n", reporter.Path)
-			postSearchMenu(reader, reporter.Path)
+			fmt.Printf("Relatorio salvo em: %s%s%s\n", ThemeCyan, reporter.Path, Reset)
+			return !postSearchMenu(reader, reporter.Path, matches)
 		}
+	} else {
+		fmt.Println(Yellow + "Nenhuma ocorrencia encontrada." + Reset)
 	}
+	return false
+}
+
+// getDiskID retorna a letra da unidade no Windows (ex: "D:") ou "/" como fallback
+func getDiskID(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		abs = path
+	}
+	vol := filepath.VolumeName(abs)
+	if vol != "" {
+		return strings.ToUpper(vol)
+	}
+	return "/"
+}
+
+// WalkState mantém o estado da busca concorrente de arquivos
+type WalkState struct {
+	mu         sync.Mutex
+	cond       *sync.Cond
+	pending    int
+	queue      []string
+	fileChan   chan<- FileMeta
+	dirsCount  int64
+	filesCount int64
+}
+
+func newWalkState(baseDir string, fileChan chan<- FileMeta) *WalkState {
+	ws := &WalkState{
+		queue:    []string{baseDir},
+		pending:  1,
+		fileChan: fileChan,
+	}
+	ws.cond = sync.NewCond(&ws.mu)
+	return ws
+}
+
+func (ws *WalkState) push(dir string) {
+	ws.mu.Lock()
+	ws.queue = append(ws.queue, dir)
+	ws.pending++
+	ws.mu.Unlock()
+	ws.cond.Signal()
+}
+
+func (ws *WalkState) pop() (string, bool) {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	for len(ws.queue) == 0 && ws.pending > 0 {
+		ws.cond.Wait()
+	}
+	if len(ws.queue) == 0 && ws.pending == 0 {
+		return "", false
+	}
+	dir := ws.queue[0]
+	ws.queue = ws.queue[1:]
+	return dir, true
+}
+
+func (ws *WalkState) done() {
+	ws.mu.Lock()
+	ws.pending--
+	ws.mu.Unlock()
+	ws.cond.Broadcast()
+}
+
+type BenchPhase struct {
+	workers    int32
+	startDirs  int64
+	startFiles int64
+	startTime  time.Time
+	throughput float64
 }
 
 func realizarIndexacao(reader *bufio.Reader) {
-	baseDir := prompt(reader, "\nInforme o caminho da pasta para indexar: ")
+	baseDir := prompt(reader, "\n"+Bold+"Informe o caminho da pasta para indexar: "+Reset)
 	baseDir = strings.TrimSpace(baseDir)
 	if baseDir == "" {
-		fmt.Println("Pasta nao informada.")
+		fmt.Println(Red + "Pasta nao informada." + Reset)
 		return
 	}
 
 	info, err := os.Stat(baseDir)
 	if err != nil || !info.IsDir() {
-		fmt.Println("Pasta invalida ou inacessivel.")
+		fmt.Println(Red + "Pasta invalida ou inacessivel." + Reset)
 		return
 	}
 
-	fmt.Println("Iniciando indexacao...")
+	absPath, err := filepath.Abs(baseDir)
+	if err != nil {
+		absPath = baseDir
+	}
+
+	diskID := getDiskID(absPath)
+	fmt.Printf("\nIdentificando volume do disco: %s%s%s\n", Bold+ThemeCyan, diskID, Reset)
+
+	optimalThreads := getDiskOptimalThreads(diskID)
+
+	var isBenchmarking bool
+	var initialThreads int32 = 2
+	if optimalThreads > 0 {
+		fmt.Printf("Perfil de desempenho encontrado para o disco: %s%d threads%s\n", Bold+ThemeGreen, optimalThreads, Reset)
+		initialThreads = int32(optimalThreads)
+		isBenchmarking = false
+	} else {
+		fmt.Printf("Nenhum perfil encontrado para o disco. %sIniciando autotuning de threads (2 -> 4 -> 8 -> 16)%s\n", ThemeYellow, Reset)
+		initialThreads = 2
+		isBenchmarking = true
+	}
+
+	fmt.Println(Bold + "Iniciando indexacao concorrente..." + Reset)
 	start := time.Now()
 
-	count := 0
-	// Usa uma única transação para indexar em lote (muito mais rápido)
-	_ = db.Update(func(tx *bbolt.Tx) error {
+	fileChan := make(chan FileMeta, 50000)
+
+	// Goroutine de gravação em lote no BoltDB
+	dbDone := make(chan int)
+	go func() {
+		count := 0
+		batchSize := 5000
+		tx, err := db.Begin(true)
+		if err != nil {
+			fmt.Printf("\n%sErro ao abrir transacao no banco: %v%s\n", Red, err, Reset)
+			dbDone <- 0
+			return
+		}
 		b := tx.Bucket([]byte("Files"))
-		return filepath.WalkDir(baseDir, func(path string, d os.DirEntry, walkErr error) error {
-			if walkErr != nil { return nil }
-			if !d.IsDir() {
-				fileInfo, err := d.Info()
-				if err == nil {
-					_ = putIndexHelper(b, path, fileInfo.Size(), fileInfo.ModTime().Format(time.RFC3339Nano))
-					count++
-					if count%500 == 0 {
-						fmt.Printf("\rArquivos processados: %d", count)
+
+		for meta := range fileChan {
+			_ = putIndexHelper(b, meta.Path, meta.Size, meta.ModTime)
+			count++
+
+			if count%batchSize == 0 {
+				_ = tx.Commit()
+				tx, err = db.Begin(true)
+				if err != nil {
+					fmt.Printf("\n%sErro ao continuar transacao: %v%s\n", Red, err, Reset)
+					dbDone <- count
+					return
+				}
+				b = tx.Bucket([]byte("Files"))
+			}
+		}
+
+		_ = tx.Commit()
+		dbDone <- count
+	}()
+
+	state := newWalkState(absPath, fileChan)
+
+	var activeWorkers int32 = 0
+	var targetWorkers int32 = initialThreads
+
+	var dirsProcessed int64 = 0
+	var filesScanned int64 = 0
+
+	// Fases do benchmark
+	phases := []BenchPhase{
+		{workers: 2, startDirs: 0},
+		{workers: 4, startDirs: 50},
+		{workers: 8, startDirs: 100},
+		{workers: 16, startDirs: 150},
+	}
+	currentPhaseIdx := 0
+	var benchMu sync.Mutex
+
+	var workerFunc func()
+	workerFunc = func() {
+		for {
+			// Controle de escalabilidade para baixo
+			if atomic.LoadInt32(&activeWorkers) > atomic.LoadInt32(&targetWorkers) {
+				atomic.AddInt32(&activeWorkers, -1)
+				return
+			}
+
+			dir, ok := state.pop()
+			if !ok {
+				atomic.AddInt32(&activeWorkers, -1)
+				return
+			}
+
+			entries, err := os.ReadDir(dir)
+			if err == nil {
+				for _, entry := range entries {
+					if entry.IsDir() {
+						state.push(filepath.Join(dir, entry.Name()))
+					} else {
+						info, err := entry.Info()
+						if err == nil {
+							atomic.AddInt64(&filesScanned, 1)
+							fileChan <- FileMeta{
+								Path:    filepath.Join(dir, entry.Name()),
+								Size:    info.Size(),
+								ModTime: info.ModTime().Format(time.RFC3339Nano),
+							}
+						}
 					}
 				}
 			}
-			return nil
-		})
-	})
 
-	fmt.Printf("\rIndexacao concluida! %d arquivos processados em %s.\n", count, time.Since(start).Round(time.Second))
+			state.done()
+
+			// Incrementa diretórios processados e atualiza o benchmark
+			dirsNow := atomic.AddInt64(&dirsProcessed, 1)
+
+			if isBenchmarking {
+				benchMu.Lock()
+				if currentPhaseIdx < len(phases) {
+					phase := &phases[currentPhaseIdx]
+
+					// Marca início da fase
+					if dirsNow == phase.startDirs+1 {
+						phase.startTime = time.Now()
+						phase.startFiles = atomic.LoadInt64(&filesScanned)
+					}
+
+					// Gatilho de fim da fase
+					nextDirsTrigger := phase.startDirs + 50
+					if dirsNow == nextDirsTrigger {
+						duration := time.Since(phase.startTime)
+						filesDiff := atomic.LoadInt64(&filesScanned) - phase.startFiles
+
+						if duration > 0 {
+							phase.throughput = float64(filesDiff) / duration.Seconds()
+						} else {
+							phase.throughput = 0
+						}
+
+						fmt.Printf("\n[Autotuning] Medida Fase %d (%d threads): %s%.1f arquivos/s%s\n",
+							currentPhaseIdx+1, phase.workers, ThemeCyan, phase.throughput, Reset)
+
+						currentPhaseIdx++
+						if currentPhaseIdx < len(phases) {
+							nextPhase := &phases[currentPhaseIdx]
+							atomic.StoreInt32(&targetWorkers, nextPhase.workers)
+
+							diff := nextPhase.workers - atomic.LoadInt32(&activeWorkers)
+							for i := int32(0); i < diff; i++ {
+								atomic.AddInt32(&activeWorkers, 1)
+								go workerFunc()
+							}
+						} else {
+							// Fim de todas as fases de benchmark
+							isBenchmarking = false
+							bestWorkers := int32(2)
+							var maxThroughput float64 = -1
+							for _, p := range phases {
+								if p.throughput > maxThroughput {
+									maxThroughput = p.throughput
+									bestWorkers = p.workers
+								}
+							}
+
+							fmt.Printf("\n[Autotuning Concluido] Melhor desempenho detectado: %s%d threads%s (%.1f arq/s). Gravando perfil...\n",
+								Bold+ThemeGreen, bestWorkers, Reset, maxThroughput)
+
+							_ = saveDiskOptimalThreads(diskID, int(bestWorkers))
+							atomic.StoreInt32(&targetWorkers, bestWorkers)
+						}
+					}
+				}
+				benchMu.Unlock()
+			}
+		}
+	}
+
+	// Inicia os primeiros workers do crawl
+	for i := int32(0); i < initialThreads; i++ {
+		atomic.AddInt32(&activeWorkers, 1)
+		go workerFunc()
+	}
+
+	// Feedback de progresso
+	progressDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(300 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-progressDone:
+				return
+			case <-ticker.C:
+				t := atomic.LoadInt32(&targetWorkers)
+				d := atomic.LoadInt64(&dirsProcessed)
+				f := atomic.LoadInt64(&filesScanned)
+				fmt.Printf("\rCrawl: %s%d%s pastas | %s%d%s arquivos encontrados | Threads: %s%d%s ...",
+					ThemeCyan, d, Reset, ThemeGreen, f, Reset, ThemeYellow, t, Reset)
+			}
+		}
+	}()
+
+	// Aguarda crawl
+	for atomic.LoadInt32(&activeWorkers) > 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	close(fileChan)
+	close(progressDone)
+
+	totalFilesWritten := <-dbDone
+	totalTime := time.Since(start).Round(time.Millisecond)
+
+	fmt.Printf("\n\n%sIndexacao concluida!%s\n", Bold+ThemeGreen, Reset)
+	fmt.Printf("Arquivos salvos no banco: %s%d%s\n", ThemeCyan, totalFilesWritten, Reset)
+	fmt.Printf("Tempo total: %s%s%s\n", ThemeYellow, totalTime, Reset)
 }
 
-func postSearchMenu(reader *bufio.Reader, reportPath string) bool {
+func postSearchMenu(reader *bufio.Reader, reportPath string, matches []Match) bool {
 	for {
 		fmt.Println()
-		fmt.Println("O que deseja fazer agora?")
-		fmt.Println("1 - Abrir arquivo de relatorio")
-		fmt.Println("2 - Voltar ao menu principal")
-		fmt.Println("3 - Sair")
+		fmt.Println(Bold + "O que deseja fazer agora?" + Reset)
+		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Abrir arquivo de relatorio\n")
+		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Abrir pastas dos resultados passo a passo\n")
+		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Voltar ao menu principal\n")
+		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Sair\n")
 
-		switch prompt(reader, "Escolha uma opcao (1/2/3): ") {
+		switch prompt(reader, Bold+"Escolha uma opcao (1/2/3/4): "+Reset) {
 		case "1":
 			openFile(reportPath)
 		case "2":
-			return true
+			quitToMainMenu := abrirPastasPassoAPasso(reader, matches)
+			if quitToMainMenu {
+				return true
+			}
 		case "3":
+			return true
+		case "4":
 			return false
 		default:
-			fmt.Println("Opcao invalida.")
+			fmt.Println(Red + "Opcao invalida." + Reset)
 		}
 	}
+}
+
+func abrirPastasPassoAPasso(reader *bufio.Reader, matches []Match) bool {
+	if len(matches) == 0 {
+		fmt.Println(Yellow + "Nenhum resultado para abrir." + Reset)
+		return false
+	}
+
+	// Extrair pastas únicas dos arquivos encontrados
+	var dirs []string
+	seen := make(map[string]bool)
+	for _, m := range matches {
+		dir := filepath.Dir(m.Path)
+		if !seen[dir] {
+			seen[dir] = true
+			dirs = append(dirs, dir)
+		}
+	}
+
+	fmt.Printf("\n%s--- Modo: Abertura de Pastas (%d pastas encontradas) ---%s\n", Bold+ThemeCyan, len(dirs), Reset)
+	for i, dir := range dirs {
+		fmt.Printf("\n[%d/%d] Pasta atual: %s%s%s\n", i+1, len(dirs), ThemeCyan, dir, Reset)
+		ans := prompt(reader, Bold+"Pressione Enter para abrir, ou 'q' para voltar ao menu principal: "+Reset)
+		if strings.ToLower(ans) == "q" {
+			fmt.Println(Yellow + "Retornando ao menu principal..." + Reset)
+			return true
+		}
+		openFile(dir)
+	}
+	fmt.Println(Bold + ThemeGreen + "\nTodas as pastas foram abertas!" + Reset)
+	return false
 }
 
 func openFile(path string) {
@@ -243,7 +673,7 @@ func openFile(path string) {
 	}
 
 	if err != nil {
-		fmt.Printf("Erro ao abrir o arquivo: %v\n", err)
+		fmt.Printf(Red+"Erro ao abrir o arquivo/pasta: %v\n"+Reset, err)
 	}
 }
 
@@ -256,12 +686,12 @@ func prompt(reader *bufio.Reader, label string) string {
 func promptMode(reader *bufio.Reader) SearchMode {
 	for {
 		fmt.Println()
-		fmt.Println("Tipo de busca:")
-		fmt.Println("1 - Nome do arquivo")
-		fmt.Println("2 - Conteudo do arquivo")
-		fmt.Println("3 - Ambas as opcoes")
+		fmt.Println(Bold + "Tipo de busca:" + Reset)
+		fmt.Println("  1 - Nome do arquivo")
+		fmt.Println("  2 - Conteudo do arquivo")
+		fmt.Println("  3 - Ambas as opcoes")
 
-		switch prompt(reader, "Escolha uma opcao (1/2/3): ") {
+		switch prompt(reader, Bold+"Escolha uma opcao (1/2/3): "+Reset) {
 		case "1":
 			return ModeName
 		case "2":
@@ -269,13 +699,13 @@ func promptMode(reader *bufio.Reader) SearchMode {
 		case "3":
 			return ModeBoth
 		default:
-			fmt.Println("Opcao invalida.")
+			fmt.Println(Red + "Opcao invalida." + Reset)
 		}
 	}
 }
 
 func promptTerms(reader *bufio.Reader) []string {
-	raw := prompt(reader, "Informe os termos de busca separados por ';': ")
+	raw := prompt(reader, Bold+"Informe os termos de busca separados por ';' (ex: erro;cliente): "+Reset)
 	parts := strings.Split(raw, ";")
 	terms := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -290,23 +720,23 @@ func promptTerms(reader *bufio.Reader) []string {
 func promptExtensions(reader *bufio.Reader) (bool, map[string]struct{}) {
 	for {
 		fmt.Println()
-		fmt.Println("Filtro de extensao:")
-		fmt.Println("1 - Buscar em todos os arquivos")
-		fmt.Println("2 - Filtrar por extensoes")
+		fmt.Println(Bold + "Filtro de extensao:" + Reset)
+		fmt.Println("  1 - Buscar em todos os arquivos")
+		fmt.Println("  2 - Filtrar por extensoes")
 
-		switch prompt(reader, "Escolha uma opcao (1/2): ") {
+		switch prompt(reader, Bold+"Escolha uma opcao (1/2): "+Reset) {
 		case "1":
 			return true, nil
 		case "2":
-			raw := prompt(reader, "Informe as extensoes separadas por ';' (ex.: .txt;.go;.json): ")
+			raw := prompt(reader, Bold+"Informe as extensoes separadas por ';' (ex.: .txt;.go;.json): "+Reset)
 			filter := parseExtensions(raw)
 			if len(filter) == 0 {
-				fmt.Println("Nenhuma extensao valida foi informada.")
+				fmt.Println(Red + "Nenhuma extensao valida foi informada." + Reset)
 				continue
 			}
 			return false, filter
 		default:
-			fmt.Println("Opcao invalida.")
+			fmt.Println(Red + "Opcao invalida." + Reset)
 		}
 	}
 }
@@ -338,6 +768,34 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 	}
 	defer reporter.Close()
 
+	// Canal para indexação assíncrona no BoltDB durante a busca
+	searchIndexChan := make(chan FileMeta, 10000)
+	indexDone := make(chan struct{})
+	go func() {
+		defer close(indexDone)
+		count := 0
+		batchSize := 2000
+		tx, err := db.Begin(true)
+		if err != nil {
+			return
+		}
+		b := tx.Bucket([]byte("Files"))
+
+		for meta := range searchIndexChan {
+			_ = putIndexHelper(b, meta.Path, meta.Size, meta.ModTime)
+			count++
+			if count%batchSize == 0 {
+				_ = tx.Commit()
+				tx, err = db.Begin(true)
+				if err != nil {
+					return
+				}
+				b = tx.Bucket([]byte("Files"))
+			}
+		}
+		_ = tx.Commit()
+	}()
+
 	var scannedFiles atomic.Int64
 	var workers sync.WaitGroup
 	var collector sync.WaitGroup
@@ -357,7 +815,7 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 			if err := reporter.Append(batch); err != nil {
 				errorsCh <- fmt.Sprintf("Falha ao salvar no relatorio: %v", err)
 			}
-			showFound(batch)
+			showFound(batch, config.Terms)
 		}
 	}()
 
@@ -366,7 +824,7 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 		go func() {
 			defer workers.Done()
 			for path := range jobs {
-				fileMatches, err := processFile(path, config.Mode, config.Terms)
+				fileMatches, err := processFile(path, config.Mode, config.Terms, searchIndexChan)
 				if err != nil {
 					errorsCh <- fmt.Sprintf("Falha ao ler arquivo %s: %v", path, err)
 					continue
@@ -383,7 +841,7 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 
 	walkErr := filepath.WalkDir(config.BaseDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			fmt.Printf("\nIgnorando caminho com erro: %s (%v)\n", path, walkErr)
+			fmt.Printf("\n%sIgnorando caminho com erro: %s (%v)%s\n", Red, path, walkErr, Reset)
 			return nil
 		}
 		if d.IsDir() {
@@ -400,17 +858,21 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 
 	close(jobs)
 	workers.Wait()
+	close(searchIndexChan)
+	<-indexDone
 	close(results)
 	close(errorsCh)
 	collector.Wait()
 	close(progressDone)
 
 	for msg := range errorsCh {
-		fmt.Printf("\n%s\n", msg)
+		fmt.Printf("\n%s%s%s\n", Red, msg, Reset)
 	}
 
 	totalScanned := int(scannedFiles.Load())
-	fmt.Printf("\rAnalisando arquivos... %d | workers: %d\n", totalScanned, workerCount)
+	fmt.Printf("\r%sAnalisando arquivos...%s %s%d%s | workers: %s%d%s\n",
+		ThemeCyan, Reset, ThemeGreen, totalScanned, Reset, ThemeYellow, workerCount, Reset)
+
 	if len(matches) == 0 {
 		if err := reporter.WriteNoMatches(); err != nil {
 			return SearchResult{}, err
@@ -432,19 +894,20 @@ func shouldProcessFile(path string, config SearchConfig) bool {
 	return ok
 }
 
-func processFile(path string, mode SearchMode, terms []string) ([]Match, error) {
+func processFile(path string, mode SearchMode, terms []string, indexChan chan<- FileMeta) ([]Match, error) {
 	var matches []Match
 
-	// Indexação automática durante a busca
 	info, err := os.Stat(path)
-	if err == nil {
-		_ = db.Update(func(tx *bbolt.Tx) error {
-			b := tx.Bucket([]byte("Files"))
-			if b != nil {
-				return putIndexHelper(b, path, info.Size(), info.ModTime().Format(time.RFC3339Nano))
-			}
-			return nil
-		})
+	if err == nil && indexChan != nil {
+		select {
+		case indexChan <- FileMeta{
+			Path:    path,
+			Size:    info.Size(),
+			ModTime: info.ModTime().Format(time.RFC3339Nano),
+		}:
+		default:
+			// Não bloqueia caso o canal esteja momentaneamente cheio
+		}
 	}
 
 	if mode == ModeName || mode == ModeBoth {
@@ -490,7 +953,6 @@ func searchInFile(path string, terms []string) ([]Match, error) {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	// Aumenta o buffer para lidar melhor com linhas grandes.
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var matches []Match
@@ -558,12 +1020,10 @@ func createReport(config SearchConfig) (*ReportWriter, error) {
 		Path:   filePath,
 	}
 
-	// Cabeçalho em formato TOML
 	fmt.Fprintf(writer, "[metadados]\n")
 	fmt.Fprintf(writer, "data_inicio = %q\n", time.Now().Format("2006-01-02 15:04:05.000"))
 	fmt.Fprintf(writer, "pasta_base = %q\n", config.BaseDir)
 	fmt.Fprintf(writer, "modo = %q\n", modeLabel(config.Mode))
-	
 	fmt.Fprintf(writer, "termos = [%s]\n", formatTOMLStringList(config.Terms))
 
 	if config.SearchAllFiles {
@@ -624,12 +1084,14 @@ func (r *ReportWriter) Close() error {
 	return r.File.Close()
 }
 
-func formatMatch(match Match) string {
-	line := fmt.Sprintf("Arquivo: %s", match.Path)
+func formatMatch(match Match, terms []string) string {
+	highlightedPath := highlightTerms(match.Path, terms)
+	line := fmt.Sprintf("%sArquivo:%s %s", ThemeCyan, Reset, highlightedPath)
 	if match.Kind == "conteudo" {
-		return fmt.Sprintf("%s | Linha: %d | Trecho: %s", line, match.Line, match.Text)
+		highlightedText := highlightTerms(match.Text, terms)
+		return fmt.Sprintf("%s | %sLinha:%s %d | %sTrecho:%s %s", line, ThemeYellow, Reset, match.Line, ThemeYellow, Reset, highlightedText)
 	}
-	return fmt.Sprintf("%s | Correspondencia no nome do arquivo", line)
+	return fmt.Sprintf("%s | %s[Correspondencia no nome]%s", line, Bold+ThemeGreen, Reset)
 }
 
 func modeLabel(mode SearchMode) string {
@@ -654,21 +1116,21 @@ func extensionList(filter map[string]struct{}) []string {
 	return list
 }
 
-func showFound(batch []Match) {
+func showFound(batch []Match, terms []string) {
 	for _, match := range batch {
-		fmt.Printf("\nEncontrado: %s\n", formatMatch(match))
+		fmt.Printf("\n%sEncontrado:%s %s\n", Bold+ThemeGreen, Reset, formatMatch(match, terms))
 	}
 }
 
 func showReport(reportPath string) {
 	content, err := os.ReadFile(reportPath)
 	if err != nil {
-		fmt.Printf("Nao foi possivel exibir o relatorio: %v\n", err)
+		fmt.Printf(Red+"Nao foi possivel exibir o relatorio: %v\n"+Reset, err)
 		return
 	}
 
 	fmt.Println()
-	fmt.Println("Relatorio gerado:")
+	fmt.Println(Bold + "Relatorio gerado:" + Reset)
 	fmt.Println(string(content))
 }
 
@@ -678,7 +1140,6 @@ func calculateWorkerCount(mode SearchMode) int {
 		return 1
 	}
 
-	// Busca em conteudo costuma ser mais limitada pelo disco do que pela CPU.
 	if mode == ModeContent || mode == ModeBoth {
 		if cpuCount <= 2 {
 			return cpuCount
@@ -704,7 +1165,8 @@ func showProgress(scannedFiles *atomic.Int64, workerCount int, done <-chan struc
 		case <-done:
 			return
 		case <-ticker.C:
-			fmt.Printf("\rAnalisando arquivos... %d | workers: %d", scannedFiles.Load(), workerCount)
+			fmt.Printf("\r%sAnalisando arquivos...%s %s%d%s | workers: %s%d%s",
+				ThemeCyan, Reset, ThemeGreen, scannedFiles.Load(), Reset, ThemeYellow, workerCount, Reset)
 		}
 	}
 }
