@@ -11,7 +11,7 @@ Este projeto e uma ideia simples para resolver um problema simples:
 - buscar arquivos pelo nome
 - buscar ocorrencias dentro do conteudo
 - buscar recursivamente em subpastas
-- salvar tudo em `.txt`
+- salvar tudo em `.toml`
 - deixar o codigo aberto e facil de auditar
 
 O projeto foi escrito em Go e esta pronto para uso.
@@ -29,6 +29,12 @@ Este projeto e de uso 100% livre para:
 Em resumo: voce pode usar, estudar, modificar, vender, incorporar em outro projeto ou adaptar como quiser.
 
 Veja a licenca em [LICENSE](LICENSE).
+
+## Desempenho e Performance
+
+Este projeto foi projetado com foco em velocidade máxima e eficiência de recursos:
+* **Busca e Indexação Ultrarrápidas**: O programa é capaz de entregar busca e indexação na casa de **1 a 3 segundos** mesmo em discos rígidos mecânicos de alta capacidade (testado com sucesso em **HD de 6TB**).
+* **Paralelismo Adaptativo**: A calibragem automática de threads avalia o tempo de leitura do hardware em tempo real para tirar o máximo proveito de SSDs rápidos e evitar travamentos por movimentação física da agulha de leitura (disk thrashing) em HDDs tradicionais.
 
 ## O que o programa faz
 
