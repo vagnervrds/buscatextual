@@ -32,18 +32,13 @@ Veja a licenca em [LICENSE](LICENSE).
 
 ## O que o programa faz
 
-- pede a pasta base da busca
-- pergunta se a busca sera por nome, conteudo ou ambos
-- permite buscar em todos os arquivos ou filtrar por extensao
-- recebe termos separados por `;`
-- faz a busca recursiva
-- usa multiplos workers para aproveitar melhor o processador sem exagerar na leitura de disco
-- mostra o andamento no terminal
-- mostra cada ocorrencia encontrada durante a execucao
-- cria uma subpasta `resultados_busca`
-- cria o arquivo de relatorio no inicio da execucao com data, hora e milissegundos
-- vai adicionando os resultados no `.txt` conforme encontra
-- mostra o relatorio completo no final e espera `Enter` antes de fechar
+* **Interface Colorida (ANSI)**: Possui menus estilizados e destaca os termos buscados em vermelho negrito no terminal (tanto no caminho do arquivo quanto no trecho correspondente).
+* **Busca Concorrente**: Realiza busca em disco usando múltiplos workers em paralelo para aproveitar a CPU sem sobrecarregar a leitura física.
+* **Banco de Dados Local (BoltDB)**: Indexa os caminhos e nomes de arquivos no banco `buscatextual.db` para buscas instantâneas de nomes sem ler o disco.
+* **Autotuning por Disco**: No primeiro crawler em uma unidade de disco (ex: `C:`, `D:`), o programa realiza um benchmark dinâmico (2, 4, 8 e 16 threads) para encontrar a concorrência ótima e salva o perfil no banco para indexações futuras.
+* **Gravação Otimizada**: Indexação em segundo plano e escrita no BoltDB em lotes periódicos de 5.000 arquivos, mantendo a RAM baixa e velocidade alta.
+* **Abertura Passo a Passo**: Após a busca, permite iterar e abrir as pastas dos resultados diretamente no Gerenciador de Arquivos pressionando `Enter` (ou sair digitando `q`).
+* **Relatórios Estruturados**: Salva relatórios detalhados contendo dados de metadados e resultados estruturados em formato **TOML** na pasta `resultados_busca/`.
 
 ## Arquivos incluidos no repositorio
 
@@ -111,7 +106,7 @@ Encontrado: Arquivo: C:\dados\cliente_abc.txt | Correspondencia no nome do arqui
 
 ## Relatorio gerado
 
-Os relatorios ficam em:
+Os relatórios ficam salvos em:
 
 ```text
 resultados_busca/
@@ -120,17 +115,16 @@ resultados_busca/
 Nome de exemplo:
 
 ```text
-resultado_busca_20260423_101115_161.txt
+resultado_busca_20260423_101115_161.toml
 ```
 
-O relatorio inclui:
+O relatório estruturado em formato **TOML** inclui:
 
-- data e hora de inicio
-- pasta base
-- modo de busca
-- termos
-- filtro de extensoes
-- lista das ocorrencias encontradas
+* Data e hora de início.
+* Pasta base da busca.
+* Modo de busca.
+* Termos de busca e filtros de extensão utilizados.
+* Lista de ocorrências com caminho do arquivo, tipo de correspondência (nome ou conteúdo), linha e o trecho de texto.
 
 ## Codigo auditavel
 
