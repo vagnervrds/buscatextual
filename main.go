@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -81,11 +82,23 @@ const (
 	ModeBoth
 )
 
+type SortMode int
+
+const (
+	SortByFolder SortMode = iota + 1
+	SortBySizeDesc
+	SortBySizeAsc
+	SortByDateDesc
+	SortByDateAsc
+)
+
 type Match struct {
-	Path string
-	Kind string
-	Line int
-	Text string
+	Path    string
+	Kind    string
+	Line    int
+	Text    string
+	Size    int64
+	ModTime time.Time
 }
 
 type SearchConfig struct {
@@ -94,6 +107,7 @@ type SearchConfig struct {
 	Terms           []string
 	ExtensionFilter map[string]struct{}
 	SearchAllFiles  bool
+	SortMode        SortMode
 }
 
 type SearchResult struct {
@@ -180,10 +194,17 @@ func main() {
 	reader := bufio.NewReader(os.Stdin)
 
 	if err := initDB(); err != nil {
-		fmt.Printf(Red+"Aviso: Nao foi possivel abrir o banco de dados 'buscatextual.db': %v\n"+Reset, err)
-	} else {
-		defer closeDB()
+		if err == errDatabaseLocked {
+			fmt.Println(Bold + Red + "\nErro: Ja existe outra instancia do BuscaTextual aberta!" + Reset)
+			fmt.Println(Yellow + "O banco de dados 'buscatextual.db' esta bloqueado pelo outro processo." + Reset)
+		} else {
+			fmt.Printf(Red+"\nErro ao inicializar o banco de dados 'buscatextual.db': %v\n"+Reset, err)
+		}
+		fmt.Println("\nPressione Enter para fechar...")
+		_, _ = reader.ReadString('\n')
+		os.Exit(1)
 	}
+	defer closeDB()
 
 	for {
 		fmt.Println()
@@ -194,7 +215,8 @@ func main() {
 		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Busca Rapida (%sBanco de Dados%s - Somente Nomes)\n", Bold, Reset)
 		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Buscar (%sDisco%s - Nome e Conteudo)\n", Bold, Reset)
 		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Indexar Pasta (Atualizar Banco)\n")
-		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Sair\n")
+		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Resetar Benchmarks de Concorrencia\n")
+		fmt.Printf("  "+ThemeYellow+"5"+Reset+" - Sair\n")
 		fmt.Println(Bold + ThemeCyan + "--------------------------------------------------" + Reset)
 
 		opcao := prompt(reader, Bold+"Escolha uma opcao: "+Reset)
@@ -211,11 +233,29 @@ func main() {
 		case "3":
 			realizarIndexacao(reader)
 		case "4":
+			realizarResetBenchmarks(reader)
+		case "5":
 			fmt.Println(Bold + ThemeGreen + "\nObrigado por usar o BuscaTextual! Ate logo." + Reset)
 			return
 		default:
 			fmt.Println(Red + "Opcao invalida. Tente novamente." + Reset)
 		}
+	}
+}
+
+func realizarResetBenchmarks(reader *bufio.Reader) {
+	fmt.Println()
+	conf := prompt(reader, Bold+"Tem certeza de que deseja resetar os benchmarks de concorrencia? (s/N): "+Reset)
+	conf = strings.ToLower(strings.TrimSpace(conf))
+	if conf != "s" && conf != "sim" {
+		fmt.Println(Yellow + "Operacao cancelada." + Reset)
+		return
+	}
+
+	if err := resetOptimalThreads(); err != nil {
+		fmt.Printf(Red+"Erro ao resetar benchmarks: %v\n"+Reset, err)
+	} else {
+		fmt.Println(ThemeGreen + "Benchmarks de concorrencia resetados com sucesso!" + Reset)
 	}
 }
 
@@ -241,6 +281,8 @@ func realizarBusca(reader *bufio.Reader) bool {
 		return false
 	}
 
+	sortMode := promptSortMode(reader)
+
 	fmt.Println()
 	fmt.Println(Bold + ThemeYellow + "Iniciando busca no disco e atualizando banco assincronamente..." + Reset)
 
@@ -251,6 +293,7 @@ func realizarBusca(reader *bufio.Reader) bool {
 		Terms:           terms,
 		ExtensionFilter: extensionFilter,
 		SearchAllFiles:  searchAllFiles,
+		SortMode:        sortMode,
 	}
 
 	result, err := runSearch(config)
@@ -265,7 +308,7 @@ func realizarBusca(reader *bufio.Reader) bool {
 	fmt.Printf("Ocorrencias encontradas: %s%d%s\n", ThemeGreen, len(result.Matches), Reset)
 	fmt.Printf("Tempo total: %s%s%s\n", ThemeYellow, time.Since(start).Round(time.Millisecond), Reset)
 	fmt.Printf("Relatorio salvo em: %s%s%s\n", ThemeCyan, result.ReportPath, Reset)
-	showReport(result.ReportPath)
+	promptAndShowMatches(reader, result.Matches)
 
 	return !postSearchMenu(reader, result.ReportPath, result.Matches)
 }
@@ -277,20 +320,25 @@ func realizarBuscaRapida(reader *bufio.Reader) bool {
 		return false
 	}
 
+	sortMode := promptSortMode(reader)
+
 	fmt.Println(Bold + ThemeYellow + "Buscando no banco de dados..." + Reset)
 	start := time.Now()
 	matches := searchFilenamesInDB(terms)
+
+	sortMatches(matches, sortMode)
 
 	fmt.Printf("\nBusca concluida em %s%s%s.\n", ThemeYellow, time.Since(start).Round(time.Millisecond), Reset)
 	fmt.Printf("Ocorrencias encontradas no banco: %s%d%s\n", ThemeGreen, len(matches), Reset)
 
 	if len(matches) > 0 {
-		config := SearchConfig{BaseDir: "Banco de Dados", Terms: terms, Mode: ModeName, SearchAllFiles: true}
+		config := SearchConfig{BaseDir: "Banco de Dados", Terms: terms, Mode: ModeName, SearchAllFiles: true, SortMode: sortMode}
 		reporter, _ := createReport(config)
 		if reporter != nil {
 			_ = reporter.Append(matches)
 			reporter.Close()
 			fmt.Printf("Relatorio salvo em: %s%s%s\n", ThemeCyan, reporter.Path, Reset)
+			promptAndShowMatches(reader, matches)
 			return !postSearchMenu(reader, reporter.Path, matches)
 		}
 	} else {
@@ -757,6 +805,90 @@ func parseExtensions(raw string) map[string]struct{} {
 	return filter
 }
 
+func promptSortMode(reader *bufio.Reader) SortMode {
+	for {
+		fmt.Println()
+		fmt.Println(Bold + "Ordenacao dos resultados da busca:" + Reset)
+		fmt.Println("  1 - Por pasta/caminho [padrao]")
+		fmt.Println("  2 - Por tamanho (maior para o menor)")
+		fmt.Println("  3 - Por tamanho (menor para o maior)")
+		fmt.Println("  4 - Por data de modificacao (mais recente)")
+		fmt.Println("  5 - Por data de modificacao (mais antiga)")
+
+		opcao := prompt(reader, Bold+"Escolha uma opcao (1-5 ou Enter para padrao): "+Reset)
+		if opcao == "" {
+			return SortByFolder
+		}
+		switch opcao {
+		case "1":
+			return SortByFolder
+		case "2":
+			return SortBySizeDesc
+		case "3":
+			return SortBySizeAsc
+		case "4":
+			return SortByDateDesc
+		case "5":
+			return SortByDateAsc
+		default:
+			fmt.Println(Red + "Opcao invalida." + Reset)
+		}
+	}
+}
+
+func sortMatches(matches []Match, mode SortMode) {
+	switch mode {
+	case SortByFolder:
+		sort.Slice(matches, func(i, j int) bool {
+			if matches[i].Path != matches[j].Path {
+				return matches[i].Path < matches[j].Path
+			}
+			return matches[i].Line < matches[j].Line
+		})
+	case SortBySizeDesc:
+		sort.Slice(matches, func(i, j int) bool {
+			if matches[i].Size != matches[j].Size {
+				return matches[i].Size > matches[j].Size
+			}
+			if matches[i].Path != matches[j].Path {
+				return matches[i].Path < matches[j].Path
+			}
+			return matches[i].Line < matches[j].Line
+		})
+	case SortBySizeAsc:
+		sort.Slice(matches, func(i, j int) bool {
+			if matches[i].Size != matches[j].Size {
+				return matches[i].Size < matches[j].Size
+			}
+			if matches[i].Path != matches[j].Path {
+				return matches[i].Path < matches[j].Path
+			}
+			return matches[i].Line < matches[j].Line
+		})
+	case SortByDateDesc:
+		sort.Slice(matches, func(i, j int) bool {
+			if !matches[i].ModTime.Equal(matches[j].ModTime) {
+				return matches[i].ModTime.After(matches[j].ModTime)
+			}
+			if matches[i].Path != matches[j].Path {
+				return matches[i].Path < matches[j].Path
+			}
+			return matches[i].Line < matches[j].Line
+		})
+	case SortByDateAsc:
+		sort.Slice(matches, func(i, j int) bool {
+			if !matches[i].ModTime.Equal(matches[j].ModTime) {
+				return matches[i].ModTime.Before(matches[j].ModTime)
+			}
+			if matches[i].Path != matches[j].Path {
+				return matches[i].Path < matches[j].Path
+			}
+			return matches[i].Line < matches[j].Line
+		})
+	}
+}
+
+
 func runSearch(config SearchConfig) (SearchResult, error) {
 	workerCount := calculateWorkerCount(config.Mode)
 	jobs := make(chan string, workerCount*4)
@@ -812,9 +944,6 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 			matchMu.Lock()
 			matches = append(matches, batch...)
 			matchMu.Unlock()
-			if err := reporter.Append(batch); err != nil {
-				errorsCh <- fmt.Sprintf("Falha ao salvar no relatorio: %v", err)
-			}
 			showFound(batch, config.Terms)
 		}
 	}()
@@ -873,9 +1002,15 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 	fmt.Printf("\r%sAnalisando arquivos...%s %s%d%s | workers: %s%d%s\n",
 		ThemeCyan, Reset, ThemeGreen, totalScanned, Reset, ThemeYellow, workerCount, Reset)
 
+	sortMatches(matches, config.SortMode)
+
 	if len(matches) == 0 {
 		if err := reporter.WriteNoMatches(); err != nil {
 			return SearchResult{}, err
+		}
+	} else {
+		if err := reporter.Append(matches); err != nil {
+			fmt.Printf("\n%sFalha ao salvar no relatorio: %v%s\n", Red, err, Reset)
 		}
 	}
 	return SearchResult{
@@ -935,9 +1070,17 @@ func searchInFileName(path string, terms []string) []Match {
 
 	for _, term := range terms {
 		if strings.Contains(fileName, strings.ToLower(term)) {
+			var size int64
+			var modTime time.Time
+			if info, err := os.Stat(absPath); err == nil {
+				size = info.Size()
+				modTime = info.ModTime()
+			}
 			return []Match{{
-				Path: absPath,
-				Kind: "nome",
+				Path:    absPath,
+				Kind:    "nome",
+				Size:    size,
+				ModTime: modTime,
 			}}
 		}
 	}
@@ -951,6 +1094,13 @@ func searchInFile(path string, terms []string) ([]Match, error) {
 		return nil, err
 	}
 	defer file.Close()
+
+	var size int64
+	var modTime time.Time
+	if info, err := file.Stat(); err == nil {
+		size = info.Size()
+		modTime = info.ModTime()
+	}
 
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -970,10 +1120,12 @@ func searchInFile(path string, terms []string) ([]Match, error) {
 		for _, term := range terms {
 			if strings.Contains(lowerLine, strings.ToLower(term)) {
 				matches = append(matches, Match{
-					Path: absPath,
-					Kind: "conteudo",
-					Line: lineNumber,
-					Text: line,
+					Path:    absPath,
+					Kind:    "conteudo",
+					Line:    lineNumber,
+					Text:    line,
+					Size:    size,
+					ModTime: modTime,
 				})
 				break
 			}
@@ -1053,6 +1205,12 @@ func (r *ReportWriter) Append(matches []Match) error {
 		if match.Kind == "conteudo" {
 			fmt.Fprintf(r.Writer, "linha = %d\n", match.Line)
 			fmt.Fprintf(r.Writer, "trecho = %q\n", match.Text)
+		}
+		fmt.Fprintf(r.Writer, "tamanho_bytes = %d\n", match.Size)
+		if !match.ModTime.IsZero() {
+			fmt.Fprintf(r.Writer, "data_modificacao = %q\n", match.ModTime.Format("2006-01-02 15:04:05"))
+		} else {
+			fmt.Fprintf(r.Writer, "data_modificacao = %q\n", "")
 		}
 		fmt.Fprintf(r.Writer, "\n")
 		r.hasMatch = true
@@ -1185,4 +1343,132 @@ func formatTOMLStringList(list []string) string {
 		quoted[i] = fmt.Sprintf("%q", s)
 	}
 	return strings.Join(quoted, ", ")
+}
+
+func promptAndShowMatches(reader *bufio.Reader, matches []Match) {
+	if len(matches) == 0 {
+		return
+	}
+
+	fmt.Println()
+	opcao := prompt(reader, Bold+"Deseja exibir os resultados no terminal? (S/N, padrao: S [limite de 100 entradas]): "+Reset)
+	opcao = strings.ToLower(strings.TrimSpace(opcao))
+
+	if opcao == "n" {
+		return
+	}
+
+	limit := 100
+	if opcao != "" && opcao != "s" {
+		if val, err := strconv.Atoi(opcao); err == nil && val > 0 {
+			limit = val
+		}
+	}
+
+	exibirTabelaResultados(matches, limit)
+}
+
+func truncatePathMiddle(path string, maxLen int) string {
+	if len(path) <= maxLen {
+		return path
+	}
+	if maxLen <= 5 {
+		return path[:maxLen]
+	}
+	half := (maxLen - 3) / 2
+	return path[:half] + "..." + path[len(path)-half:]
+}
+
+func formatSize(bytes int64) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	kb := float64(bytes) / 1024.0
+	if kb < 1024 {
+		return fmt.Sprintf("%.1f KB", kb)
+	}
+	mb := kb / 1024.0
+	return fmt.Sprintf("%.1f MB", mb)
+}
+
+func exibirTabelaResultados(matches []Match, limit int) {
+	if len(matches) == 0 {
+		return
+	}
+
+	if limit > len(matches) {
+		limit = len(matches)
+	}
+
+	fmt.Println()
+	fmt.Println(Bold + Yellow + "[Dica] E recomendavel maximizar o terminal para caber mais informacoes sem quebra de linha!" + Reset)
+	fmt.Printf("\nExibindo os ultimos %d de %d resultados:\n", limit, len(matches))
+	
+	// Define column widths
+	pathWidth := 45
+	kindWidth := 8
+	lineWidth := 6
+	sizeWidth := 9
+	dateWidth := 19
+	textWidth := 30
+	
+	header := fmt.Sprintf("%-*s | %-*s | %-*s | %-*s | %-*s | %-s",
+		pathWidth, "Caminho do Arquivo",
+		kindWidth, "Tipo",
+		lineWidth, "Linha",
+		sizeWidth, "Tamanho",
+		dateWidth, "Data Modificacao",
+		"Trecho (Snippet)")
+	
+	totalWidth := len(header)
+	if totalWidth > 130 {
+		totalWidth = 130
+	}
+	
+	fmt.Println(Bold + ThemeCyan + strings.Repeat("-", totalWidth) + Reset)
+	fmt.Println(header)
+	fmt.Println(Bold + ThemeCyan + strings.Repeat("-", totalWidth) + Reset)
+
+	for i := 0; i < limit; i++ {
+		m := matches[i]
+		pathStr := truncatePathMiddle(m.Path, pathWidth)
+		
+		var lineStr string
+		if m.Kind == "conteudo" {
+			lineStr = fmt.Sprintf("%d", m.Line)
+		} else {
+			lineStr = "-"
+		}
+		
+		sizeStr := formatSize(m.Size)
+		dateStr := ""
+		if !m.ModTime.IsZero() {
+			dateStr = m.ModTime.Format("2006-01-02 15:04:05")
+		} else {
+			dateStr = "-"
+		}
+
+		kindLabel := m.Kind
+		if kindLabel == "nome (banco)" {
+			kindLabel = "nome"
+		}
+
+		// Truncate snippet text to fit nicely
+		snippet := strings.TrimSpace(m.Text)
+		if len(snippet) > textWidth {
+			snippet = snippet[:textWidth-3] + "..."
+		}
+		if snippet == "" {
+			snippet = "-"
+		}
+
+		fmt.Printf("%-*s | %-*s | %-*s | %-*s | %-*s | %-s\n",
+			pathWidth, pathStr,
+			kindWidth, kindLabel,
+			lineWidth, lineStr,
+			sizeWidth, sizeStr,
+			dateWidth, dateStr,
+			snippet)
+	}
+	fmt.Println(Bold + ThemeCyan + strings.Repeat("-", totalWidth) + Reset)
 }

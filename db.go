@@ -11,6 +11,8 @@ import (
 
 var db *bbolt.DB
 
+var errDatabaseLocked = fmt.Errorf("banco de dados bloqueado (provavelmente outra instancia esta aberta)")
+
 // FileMeta corresponde à estrutura encontrada no buscatextual.db
 type FileMeta struct {
 	Path    string `json:"path"`
@@ -21,8 +23,11 @@ type FileMeta struct {
 func initDB() error {
 	var err error
 	dbPath := "buscatextual.db"
-	db, err = bbolt.Open(dbPath, 0600, &bbolt.Options{Timeout: 2 * time.Second})
+	db, err = bbolt.Open(dbPath, 0600, &bbolt.Options{Timeout: 500 * time.Millisecond})
 	if err != nil {
+		if err == bbolt.ErrTimeout {
+			return errDatabaseLocked
+		}
 		return err
 	}
 
@@ -49,9 +54,20 @@ func searchFilenamesInDB(terms []string) []Match {
 			pathLower := strings.ToLower(path)
 			for _, term := range terms {
 				if strings.Contains(pathLower, strings.ToLower(term)) {
+					var size int64
+					var modTime time.Time
+					var meta FileMeta
+					if err := json.Unmarshal(v, &meta); err == nil {
+						size = meta.Size
+						if t, err := time.Parse(time.RFC3339Nano, meta.ModTime); err == nil {
+							modTime = t
+						}
+					}
 					matches = append(matches, Match{
-						Path: path,
-						Kind: "nome (banco)",
+						Path:    path,
+						Kind:    "nome (banco)",
+						Size:    size,
+						ModTime: modTime,
 					})
 					break
 				}
@@ -126,3 +142,15 @@ func closeDB() {
 		db.Close()
 	}
 }
+
+func resetOptimalThreads() error {
+	return db.Update(func(tx *bbolt.Tx) error {
+		err := tx.DeleteBucket([]byte("DiskConfig"))
+		if err != nil && err != bbolt.ErrBucketNotFound {
+			return err
+		}
+		_, err = tx.CreateBucketIfNotExists([]byte("DiskConfig"))
+		return err
+	})
+}
+

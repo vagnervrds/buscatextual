@@ -17,6 +17,9 @@ echo Build incrementado para: %BUILD_NUM%
 echo Configurando icone...
 go-winres simply --icon icon.ico --arch amd64
 
+echo Fechando instancias ativas do buscatextual.exe...
+taskkill /f /im buscatextual.exe >nul 2>&1
+
 echo Gerando buscatextual.exe...
 go build -ldflags "-X main.BuildVersion=%BUILD_NUM%" -o buscatextual.exe .
 if errorlevel 1 (
