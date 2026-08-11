@@ -102,12 +102,12 @@ type Match struct {
 }
 
 type SearchConfig struct {
-	BaseDir         string
-	Mode            SearchMode
-	Terms           []string
-	ExtensionFilter map[string]struct{}
-	SearchAllFiles  bool
-	SortMode        SortMode
+	BaseDir        string
+	Mode           SearchMode
+	Terms          []string
+	PositiveFilter []string
+	NegativeFilter []string
+	SortMode       SortMode
 }
 
 type SearchResult struct {
@@ -216,7 +216,8 @@ func main() {
 		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Buscar (%sDisco%s - Nome e Conteudo)\n", Bold, Reset)
 		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Indexar Pasta (Atualizar Banco)\n")
 		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Resetar Benchmarks de Concorrencia\n")
-		fmt.Printf("  "+ThemeYellow+"5"+Reset+" - Sair\n")
+		fmt.Printf("  "+ThemeYellow+"5"+Reset+" - Configuracoes\n")
+		fmt.Printf("  "+ThemeYellow+"6"+Reset+" - Sair\n")
 		fmt.Println(Bold + ThemeCyan + "--------------------------------------------------" + Reset)
 
 		opcao := prompt(reader, Bold+"Escolha uma opcao: "+Reset)
@@ -235,6 +236,8 @@ func main() {
 		case "4":
 			realizarResetBenchmarks(reader)
 		case "5":
+			realizarConfiguracoes(reader)
+		case "6":
 			fmt.Println(Bold + ThemeGreen + "\nObrigado por usar o BuscaTextual! Ate logo." + Reset)
 			return
 		default:
@@ -275,7 +278,8 @@ func realizarBusca(reader *bufio.Reader) bool {
 
 	mode := promptMode(reader)
 	terms := promptTerms(reader)
-	searchAllFiles, extensionFilter := promptExtensions(reader)
+	posFilter := promptPositiveFilter(reader)
+	negFilter := promptNegativeFilter(reader)
 	if len(terms) == 0 {
 		fmt.Println(Red + "Nenhum termo de busca valido foi informado." + Reset)
 		return false
@@ -288,12 +292,12 @@ func realizarBusca(reader *bufio.Reader) bool {
 
 	start := time.Now()
 	config := SearchConfig{
-		BaseDir:         baseDir,
-		Mode:            mode,
-		Terms:           terms,
-		ExtensionFilter: extensionFilter,
-		SearchAllFiles:  searchAllFiles,
-		SortMode:        sortMode,
+		BaseDir:        baseDir,
+		Mode:           mode,
+		Terms:          terms,
+		PositiveFilter: posFilter,
+		NegativeFilter: negFilter,
+		SortMode:       sortMode,
 	}
 
 	result, err := runSearch(config)
@@ -315,6 +319,8 @@ func realizarBusca(reader *bufio.Reader) bool {
 
 func realizarBuscaRapida(reader *bufio.Reader) bool {
 	terms := promptTerms(reader)
+	posFilter := promptPositiveFilter(reader)
+	negFilter := promptNegativeFilter(reader)
 	if len(terms) == 0 {
 		fmt.Println(Red + "Nenhum termo informado." + Reset)
 		return false
@@ -324,7 +330,7 @@ func realizarBuscaRapida(reader *bufio.Reader) bool {
 
 	fmt.Println(Bold + ThemeYellow + "Buscando no banco de dados..." + Reset)
 	start := time.Now()
-	matches := searchFilenamesInDB(terms)
+	matches := searchFilenamesInDB(terms, posFilter, negFilter)
 
 	sortMatches(matches, sortMode)
 
@@ -332,7 +338,14 @@ func realizarBuscaRapida(reader *bufio.Reader) bool {
 	fmt.Printf("Ocorrencias encontradas no banco: %s%d%s\n", ThemeGreen, len(matches), Reset)
 
 	if len(matches) > 0 {
-		config := SearchConfig{BaseDir: "Banco de Dados", Terms: terms, Mode: ModeName, SearchAllFiles: true, SortMode: sortMode}
+		config := SearchConfig{
+			BaseDir:        "Banco de Dados",
+			Terms:          terms,
+			PositiveFilter: posFilter,
+			NegativeFilter: negFilter,
+			Mode:           ModeName,
+			SortMode:       sortMode,
+		}
 		reporter, _ := createReport(config)
 		if reporter != nil {
 			_ = reporter.Append(matches)
@@ -765,44 +778,66 @@ func promptTerms(reader *bufio.Reader) []string {
 	return terms
 }
 
-func promptExtensions(reader *bufio.Reader) (bool, map[string]struct{}) {
-	for {
-		fmt.Println()
-		fmt.Println(Bold + "Filtro de extensao:" + Reset)
-		fmt.Println("  1 - Buscar em todos os arquivos")
-		fmt.Println("  2 - Filtrar por extensoes")
-
-		switch prompt(reader, Bold+"Escolha uma opcao (1/2): "+Reset) {
-		case "1":
-			return true, nil
-		case "2":
-			raw := prompt(reader, Bold+"Informe as extensoes separadas por ';' (ex.: .txt;.go;.json): "+Reset)
-			filter := parseExtensions(raw)
-			if len(filter) == 0 {
-				fmt.Println(Red + "Nenhuma extensao valida foi informada." + Reset)
-				continue
-			}
-			return false, filter
-		default:
-			fmt.Println(Red + "Opcao invalida." + Reset)
-		}
-	}
+func promptPositiveFilter(reader *bufio.Reader) []string {
+	raw := prompt(reader, Bold+"Filtro POSITIVO no caminho/nome (separados por ';', ex: .jpg;2024 ou Enter para todos): "+Reset)
+	return parseFilterTerms(raw)
 }
 
-func parseExtensions(raw string) map[string]struct{} {
-	parts := strings.Split(raw, ";")
-	filter := make(map[string]struct{}, len(parts))
+func promptNegativeFilter(reader *bufio.Reader) []string {
+	raw := prompt(reader, Bold+"Filtro NEGATIVO no caminho/nome (separados por ';', ex: tmp;backup ou Enter para nenhum): "+Reset)
+	return parseFilterTerms(raw)
+}
+
+func parseFilterTerms(raw string) []string {
+	rawNormalized := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(raw, ";", " "), ",", " "), "|", " ")
+	parts := strings.Fields(rawNormalized)
+	var terms []string
 	for _, part := range parts {
-		ext := strings.TrimSpace(strings.ToLower(part))
-		if ext == "" {
-			continue
+		term := strings.TrimSpace(strings.ToLower(part))
+		if term != "" {
+			terms = append(terms, term)
 		}
-		if !strings.HasPrefix(ext, ".") {
-			ext = "." + ext
-		}
-		filter[ext] = struct{}{}
 	}
-	return filter
+	return terms
+}
+
+func realizarConfiguracoes(reader *bufio.Reader) {
+	for {
+		currentLimit := getMaxSearchHistory()
+		fmt.Println()
+		fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
+		fmt.Println(Bold + " Configuracoes" + Reset)
+		fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
+		fmt.Printf(" Limite atual de relatorios na pasta /resultados_busca: %s%d%s\n\n", Bold+ThemeGreen, currentLimit, Reset)
+		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Alterar limite de arquivos de historico\n")
+		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Voltar ao menu principal\n")
+		fmt.Println(Bold + ThemeCyan + "--------------------------------------------------" + Reset)
+
+		opcao := prompt(reader, Bold+"Escolha uma opcao: "+Reset)
+		switch opcao {
+		case "1":
+			valStr := prompt(reader, Bold+"Digite a nova quantidade limite de arquivos de historico (padrao: 10): "+Reset)
+			valStr = strings.TrimSpace(valStr)
+			if valStr == "" {
+				valStr = "10"
+			}
+			newLimit, err := strconv.Atoi(valStr)
+			if err != nil || newLimit < 0 {
+				fmt.Println(Red + "Valor invalido! Por favor insira um numero inteiro maior ou igual a 0." + Reset)
+			} else {
+				if err := saveMaxSearchHistory(newLimit); err != nil {
+					fmt.Printf(Red+"Erro ao salvar configuracao no banco: %v\n"+Reset, err)
+				} else {
+					fmt.Printf(ThemeGreen+"Limite alterado para %d arquivos com sucesso!\n"+Reset, newLimit)
+					cleanOldSearchHistory("resultados_busca")
+				}
+			}
+		case "2":
+			return
+		default:
+			fmt.Println(Red + "Opcao invalida. Tente novamente." + Reset)
+		}
+	}
 }
 
 func promptSortMode(reader *bufio.Reader) SortMode {
@@ -1021,12 +1056,77 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 }
 
 func shouldProcessFile(path string, config SearchConfig) bool {
-	if config.SearchAllFiles {
-		return true
+	pathLower := strings.ToLower(path)
+
+	// Filtro Negativo: se contiver qualquer termo negativo, ignora
+	for _, neg := range config.NegativeFilter {
+		if strings.Contains(pathLower, neg) {
+			return false
+		}
 	}
-	ext := strings.ToLower(filepath.Ext(path))
-	_, ok := config.ExtensionFilter[ext]
-	return ok
+
+	// Filtro Positivo: se houver termos positivos, deve conter pelo menos um
+	if len(config.PositiveFilter) > 0 {
+		matched := false
+		for _, pos := range config.PositiveFilter {
+			if strings.Contains(pathLower, pos) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	return true
+}
+
+type reportFileInfo struct {
+	path    string
+	modTime time.Time
+}
+
+func cleanOldSearchHistory(reportDir string) {
+	maxFiles := getMaxSearchHistory()
+	if maxFiles <= 0 {
+		return
+	}
+
+	entries, err := os.ReadDir(reportDir)
+	if err != nil {
+		return
+	}
+
+	var files []reportFileInfo
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "resultado_busca_") && strings.HasSuffix(entry.Name(), ".toml") {
+			info, err := entry.Info()
+			if err == nil {
+				files = append(files, reportFileInfo{
+					path:    filepath.Join(reportDir, entry.Name()),
+					modTime: info.ModTime(),
+				})
+			}
+		}
+	}
+
+	if len(files) < maxFiles {
+		return
+	}
+
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime.Before(files[j].modTime)
+	})
+
+	// Se a contagem atingiu ou excedeu o limite, remove os mais antigos para abrir espaço para o novo (ou após a criação)
+	numToRemove := (len(files) - maxFiles) + 1
+	if numToRemove > len(files) {
+		numToRemove = len(files)
+	}
+	for i := 0; i < numToRemove; i++ {
+		_ = os.Remove(files[i].path)
+	}
 }
 
 func processFile(path string, mode SearchMode, terms []string, indexChan chan<- FileMeta) ([]Match, error) {
@@ -1153,6 +1253,8 @@ func createReport(config SearchConfig) (*ReportWriter, error) {
 		return nil, err
 	}
 
+	cleanOldSearchHistory(reportDir)
+
 	timestamp := strings.ReplaceAll(time.Now().Format("20060102_150405.000"), ".", "_")
 	fileName := fmt.Sprintf("resultado_busca_%s.toml", timestamp)
 	filePath, err := filepath.Abs(filepath.Join(reportDir, fileName))
@@ -1178,11 +1280,15 @@ func createReport(config SearchConfig) (*ReportWriter, error) {
 	fmt.Fprintf(writer, "modo = %q\n", modeLabel(config.Mode))
 	fmt.Fprintf(writer, "termos = [%s]\n", formatTOMLStringList(config.Terms))
 
-	if config.SearchAllFiles {
-		fmt.Fprintf(writer, "extensoes = \"todas\"\n")
+	if len(config.PositiveFilter) == 0 {
+		fmt.Fprintf(writer, "filtros_positivos = \"todos\"\n")
 	} else {
-		exts := extensionList(config.ExtensionFilter)
-		fmt.Fprintf(writer, "extensoes = [%s]\n", formatTOMLStringList(exts))
+		fmt.Fprintf(writer, "filtros_positivos = [%s]\n", formatTOMLStringList(config.PositiveFilter))
+	}
+	if len(config.NegativeFilter) == 0 {
+		fmt.Fprintf(writer, "filtros_negativos = \"nenhum\"\n")
+	} else {
+		fmt.Fprintf(writer, "filtros_negativos = [%s]\n", formatTOMLStringList(config.NegativeFilter))
 	}
 	fmt.Fprintf(writer, "\n")
 
@@ -1351,32 +1457,28 @@ func promptAndShowMatches(reader *bufio.Reader, matches []Match) {
 	}
 
 	fmt.Println()
-	opcao := prompt(reader, Bold+"Deseja exibir os resultados no terminal? (S/N, padrao: S [limite de 100 entradas]): "+Reset)
-	opcao = strings.ToLower(strings.TrimSpace(opcao))
+	opcao := prompt(reader, Bold+"Deseja exibir os resultados no terminal? Insira a quantidade (padrao: 10, 0 para nenhum, maximo 100): "+Reset)
+	opcaoLower := strings.ToLower(strings.TrimSpace(opcao))
 
-	if opcao == "n" {
+	if opcaoLower == "0" || opcaoLower == "n" || opcaoLower == "nao" {
 		return
 	}
 
-	limit := 100
-	if opcao != "" && opcao != "s" {
-		if val, err := strconv.Atoi(opcao); err == nil && val > 0 {
+	limit := 10
+	if opcaoLower != "" && opcaoLower != "s" && opcaoLower != "sim" {
+		if val, err := strconv.Atoi(opcaoLower); err == nil {
+			if val <= 0 {
+				return
+			}
 			limit = val
 		}
 	}
 
-	exibirTabelaResultados(matches, limit)
-}
+	if limit > 100 {
+		limit = 100
+	}
 
-func truncatePathMiddle(path string, maxLen int) string {
-	if len(path) <= maxLen {
-		return path
-	}
-	if maxLen <= 5 {
-		return path[:maxLen]
-	}
-	half := (maxLen - 3) / 2
-	return path[:half] + "..." + path[len(path)-half:]
+	exibirTabelaResultados(matches, limit)
 }
 
 func formatSize(bytes int64) string {
@@ -1404,8 +1506,15 @@ func exibirTabelaResultados(matches []Match, limit int) {
 	fmt.Println(Bold + Yellow + "[Dica] E recomendavel maximizar o terminal para caber mais informacoes sem quebra de linha!" + Reset)
 	fmt.Printf("\nExibindo os ultimos %d de %d resultados:\n", limit, len(matches))
 	
-	// Define column widths
-	pathWidth := 45
+	// Define largura dinamica da coluna de caminho para nao cortar o endereco do arquivo
+	pathHeader := "Caminho do Arquivo"
+	pathWidth := len(pathHeader)
+	for i := 0; i < limit; i++ {
+		if len(matches[i].Path) > pathWidth {
+			pathWidth = len(matches[i].Path)
+		}
+	}
+
 	kindWidth := 8
 	lineWidth := 6
 	sizeWidth := 9
@@ -1413,7 +1522,7 @@ func exibirTabelaResultados(matches []Match, limit int) {
 	textWidth := 30
 	
 	header := fmt.Sprintf("%-*s | %-*s | %-*s | %-*s | %-*s | %-s",
-		pathWidth, "Caminho do Arquivo",
+		pathWidth, pathHeader,
 		kindWidth, "Tipo",
 		lineWidth, "Linha",
 		sizeWidth, "Tamanho",
@@ -1421,9 +1530,6 @@ func exibirTabelaResultados(matches []Match, limit int) {
 		"Trecho (Snippet)")
 	
 	totalWidth := len(header)
-	if totalWidth > 130 {
-		totalWidth = 130
-	}
 	
 	fmt.Println(Bold + ThemeCyan + strings.Repeat("-", totalWidth) + Reset)
 	fmt.Println(header)
@@ -1431,7 +1537,7 @@ func exibirTabelaResultados(matches []Match, limit int) {
 
 	for i := 0; i < limit; i++ {
 		m := matches[i]
-		pathStr := truncatePathMiddle(m.Path, pathWidth)
+		pathStr := m.Path
 		
 		var lineStr string
 		if m.Kind == "conteudo" {
@@ -1453,7 +1559,6 @@ func exibirTabelaResultados(matches []Match, limit int) {
 			kindLabel = "nome"
 		}
 
-		// Truncate snippet text to fit nicely
 		snippet := strings.TrimSpace(m.Text)
 		if len(snippet) > textWidth {
 			snippet = snippet[:textWidth-3] + "..."

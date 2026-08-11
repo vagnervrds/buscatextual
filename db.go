@@ -35,13 +35,16 @@ func initDB() error {
 		if _, err := tx.CreateBucketIfNotExists([]byte("Files")); err != nil {
 			return err
 		}
-		_, err = tx.CreateBucketIfNotExists([]byte("DiskConfig"))
+		if _, err := tx.CreateBucketIfNotExists([]byte("DiskConfig")); err != nil {
+			return err
+		}
+		_, err = tx.CreateBucketIfNotExists([]byte("AppConfig"))
 		return err
 	})
 }
 
-// searchFilenamesInDB realiza busca apenas pelos nomes no banco de dados
-func searchFilenamesInDB(terms []string) []Match {
+// searchFilenamesInDB realiza busca apenas pelos nomes no banco de dados com suporte a filtros positivos e negativos
+func searchFilenamesInDB(terms []string, posFilter []string, negFilter []string) []Match {
 	var matches []Match
 	_ = db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte("Files"))
@@ -52,6 +55,29 @@ func searchFilenamesInDB(terms []string) []Match {
 		return b.ForEach(func(k, v []byte) error {
 			path := string(k)
 			pathLower := strings.ToLower(path)
+
+			// Verifica Filtro Negativo
+			for _, neg := range negFilter {
+				if strings.Contains(pathLower, neg) {
+					return nil
+				}
+			}
+
+			// Verifica Filtro Positivo
+			if len(posFilter) > 0 {
+				matched := false
+				for _, pos := range posFilter {
+					if strings.Contains(pathLower, pos) {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					return nil
+				}
+			}
+
+			// Verifica Termos de Busca
 			for _, term := range terms {
 				if strings.Contains(pathLower, strings.ToLower(term)) {
 					var size int64
@@ -76,6 +102,46 @@ func searchFilenamesInDB(terms []string) []Match {
 		})
 	})
 	return matches
+}
+
+func getMaxSearchHistory() int {
+	defaultLimit := 10
+	if db == nil {
+		return defaultLimit
+	}
+	var limit int = defaultLimit
+	_ = db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("AppConfig"))
+		if b == nil {
+			return nil
+		}
+		v := b.Get([]byte("max_search_history"))
+		if v != nil {
+			var val int
+			if err := json.Unmarshal(v, &val); err == nil && val >= 0 {
+				limit = val
+			}
+		}
+		return nil
+	})
+	return limit
+}
+
+func saveMaxSearchHistory(limit int) error {
+	if db == nil {
+		return fmt.Errorf("banco de dados nao inicializado")
+	}
+	return db.Update(func(tx *bbolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte("AppConfig"))
+		if err != nil {
+			return err
+		}
+		buf, err := json.Marshal(limit)
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte("max_search_history"), buf)
+	})
 }
 
 // putIndexHelper é uma função auxiliar para salvar metadados em um bucket aberto
