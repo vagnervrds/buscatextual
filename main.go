@@ -2,7 +2,10 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,12 +104,20 @@ type Match struct {
 	ModTime time.Time
 }
 
+type TargetType int
+
+const (
+	TargetFiles TargetType = iota // padrao
+	TargetDirectories
+)
+
 type SearchConfig struct {
 	BaseDir        string
 	Mode           SearchMode
 	Terms          []string
 	PositiveFilter []string
 	NegativeFilter []string
+	TargetType     TargetType
 	SortMode       SortMode
 }
 
@@ -190,6 +201,7 @@ func highlightTerms(text string, terms []string) string {
 }
 
 func main() {
+	cleanupOldBinary()
 	initConsole()
 	reader := bufio.NewReader(os.Stdin)
 
@@ -215,9 +227,10 @@ func main() {
 		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Busca Rapida (%sBanco de Dados%s - Somente Nomes)\n", Bold, Reset)
 		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Buscar (%sDisco%s - Nome e Conteudo)\n", Bold, Reset)
 		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Indexar Pasta (Atualizar Banco)\n")
-		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Resetar Benchmarks de Concorrencia\n")
-		fmt.Printf("  "+ThemeYellow+"5"+Reset+" - Configuracoes\n")
-		fmt.Printf("  "+ThemeYellow+"6"+Reset+" - Sair\n")
+		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Checar Atualizacoes (GitHub)\n")
+		fmt.Printf("  "+ThemeYellow+"5"+Reset+" - Resetar Benchmarks de Concorrencia\n")
+		fmt.Printf("  "+ThemeYellow+"6"+Reset+" - Configuracoes\n")
+		fmt.Printf("  "+ThemeYellow+"7"+Reset+" - Sair\n")
 		fmt.Println(Bold + ThemeCyan + "--------------------------------------------------" + Reset)
 
 		opcao := prompt(reader, Bold+"Escolha uma opcao: "+Reset)
@@ -234,15 +247,208 @@ func main() {
 		case "3":
 			realizarIndexacao(reader)
 		case "4":
-			realizarResetBenchmarks(reader)
+			realizarChecagemAtualizacao(reader)
 		case "5":
-			realizarConfiguracoes(reader)
+			realizarResetBenchmarks(reader)
 		case "6":
+			realizarConfiguracoes(reader)
+		case "7":
 			fmt.Println(Bold + ThemeGreen + "\nObrigado por usar o BuscaTextual! Ate logo." + Reset)
 			return
 		default:
 			fmt.Println(Red + "Opcao invalida. Tente novamente." + Reset)
 		}
+	}
+}
+
+func cleanupOldBinary() {
+	execPath, err := os.Executable()
+	if err != nil {
+		return
+	}
+	oldPath := execPath + ".old"
+	if _, err := os.Stat(oldPath); err == nil {
+		_ = os.Remove(oldPath)
+	}
+}
+
+type RemoteBuildInfo struct {
+	Build int `json:"build"`
+}
+
+func getLocalBuildNumber() int {
+	cleanVer := strings.TrimSpace(BuildVersion)
+	num, err := strconv.Atoi(cleanVer)
+	if err != nil {
+		return 0
+	}
+	return num
+}
+
+func checkUpdate() (hasUpdate bool, remoteBuild int, err error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get("https://raw.githubusercontent.com/vagnervrds/buscatextual/main/build.json")
+	if err != nil {
+		return false, 0, fmt.Errorf("falha ao conectar ao GitHub: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, 0, fmt.Errorf("resposta invalida do GitHub (HTTP %d)", resp.StatusCode)
+	}
+
+	var remoteInfo RemoteBuildInfo
+	if err := json.NewDecoder(resp.Body).Decode(&remoteInfo); err != nil {
+		return false, 0, fmt.Errorf("falha ao decodificar JSON de versao: %v", err)
+	}
+
+	localBuild := getLocalBuildNumber()
+	if remoteInfo.Build > localBuild {
+		return true, remoteInfo.Build, nil
+	}
+
+	return false, remoteInfo.Build, nil
+}
+
+type progressWriter struct {
+	total      int64
+	downloaded int64
+	lastPct    int
+}
+
+func (pw *progressWriter) Write(p []byte) (int, error) {
+	n := len(p)
+	pw.downloaded += int64(n)
+	if pw.total > 0 {
+		pct := int((float64(pw.downloaded) / float64(pw.total)) * 100)
+		if pct >= pw.lastPct+5 || pct == 100 {
+			pw.lastPct = pct
+			fmt.Printf("\rBaixando atualizacao: %d%% (%d / %d bytes)...", pct, pw.downloaded, pw.total)
+		}
+	} else {
+		fmt.Printf("\rBaixando atualizacao: %d bytes...", pw.downloaded)
+	}
+	return n, nil
+}
+
+func downloadAndUpdate(remoteBuild int) error {
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("nao foi possivel identificar o executavel atual: %v", err)
+	}
+
+	urls := []string{
+		"https://github.com/vagnervrds/buscatextual/releases/latest/download/buscatextual.exe",
+		"https://raw.githubusercontent.com/vagnervrds/buscatextual/main/buscatextual.exe",
+	}
+
+	var resp *http.Response
+	var downloadErr error
+	client := &http.Client{Timeout: 5 * time.Minute}
+
+	fmt.Println(Bold + ThemeYellow + "Buscando arquivo da atualizacao no GitHub..." + Reset)
+	for _, downloadURL := range urls {
+		req, err := http.NewRequest("GET", downloadURL, nil)
+		if err != nil {
+			continue
+		}
+		res, err := client.Do(req)
+		if err == nil && res.StatusCode == http.StatusOK {
+			resp = res
+			break
+		}
+		if res != nil {
+			res.Body.Close()
+		}
+		downloadErr = err
+	}
+
+	if resp == nil {
+		if downloadErr != nil {
+			return fmt.Errorf("falha ao baixar o arquivo executavel: %v", downloadErr)
+		}
+		return fmt.Errorf("executavel nao encontrado na release ou repositorio GitHub")
+	}
+	defer resp.Body.Close()
+
+	newPath := execPath + ".new"
+	oldPath := execPath + ".old"
+
+	out, err := os.Create(newPath)
+	if err != nil {
+		return fmt.Errorf("falha ao criar arquivo temporario %s: %v", newPath, err)
+	}
+
+	pw := &progressWriter{total: resp.ContentLength}
+	_, err = io.Copy(out, io.TeeReader(resp.Body, pw))
+	out.Close()
+	fmt.Println()
+
+	if err != nil {
+		_ = os.Remove(newPath)
+		return fmt.Errorf("falha durante o download do executavel: %v", err)
+	}
+
+	_ = os.Remove(oldPath)
+
+	err = os.Rename(execPath, oldPath)
+	if err != nil {
+		_ = os.Remove(newPath)
+		return fmt.Errorf("falha ao renomear executavel atual: %v", err)
+	}
+
+	err = os.Rename(newPath, execPath)
+	if err != nil {
+		_ = os.Rename(oldPath, execPath)
+		return fmt.Errorf("falha ao instalar novo executavel: %v", err)
+	}
+
+	fmt.Println(Bold + ThemeGreen + "\nAtualizacao para o build " + strconv.Itoa(remoteBuild) + " instalada com sucesso!" + Reset)
+	fmt.Println(Yellow + "Reiniciando o BuscaTextual..." + Reset)
+	time.Sleep(1 * time.Second)
+
+	cmd := exec.Command(execPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	if err := cmd.Start(); err != nil {
+		fmt.Printf(Red+"Erro ao reiniciar o aplicativo: %v. Por favor, inicie manualmente.\n"+Reset, err)
+	}
+
+	os.Exit(0)
+	return nil
+}
+
+func realizarChecagemAtualizacao(reader *bufio.Reader) {
+	fmt.Println()
+	fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
+	fmt.Println(Bold + " Checando Atualizacoes no GitHub..." + Reset)
+	fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
+
+	localBuild := getLocalBuildNumber()
+	fmt.Printf(" Versao/Build Local: %s%s%s (build %d)\n", Bold+ThemeGreen, BuildVersion, Reset, localBuild)
+
+	hasUpdate, remoteBuild, err := checkUpdate()
+	if err != nil {
+		fmt.Printf(Red+"\nErro ao verificar atualizacoes: %v\n"+Reset, err)
+		return
+	}
+
+	fmt.Printf(" Versao/Build no GitHub: %s%d%s\n", Bold+ThemeCyan, remoteBuild, Reset)
+
+	if hasUpdate {
+		fmt.Println(Bold + ThemeYellow + "\n[!] Nova versao disponivel!" + Reset)
+		resp := prompt(reader, Bold+"Deseja baixar e atualizar o aplicativo agora? (s/N): "+Reset)
+		resp = strings.ToLower(strings.TrimSpace(resp))
+		if resp == "s" || resp == "sim" {
+			if err := downloadAndUpdate(remoteBuild); err != nil {
+				fmt.Printf(Red+"\nFalha ao atualizar: %v\n"+Reset, err)
+			}
+		} else {
+			fmt.Println(Yellow + "Atualizacao cancelada." + Reset)
+		}
+	} else {
+		fmt.Println(Bold + ThemeGreen + "\n[V] Voce ja esta utilizando a versao mais recente!" + Reset)
 	}
 }
 
@@ -280,6 +486,7 @@ func realizarBusca(reader *bufio.Reader) bool {
 	terms := promptTerms(reader)
 	posFilter := promptPositiveFilter(reader)
 	negFilter := promptNegativeFilter(reader)
+	targetType := promptTargetType(reader)
 	if len(terms) == 0 {
 		fmt.Println(Red + "Nenhum termo de busca valido foi informado." + Reset)
 		return false
@@ -297,6 +504,7 @@ func realizarBusca(reader *bufio.Reader) bool {
 		Terms:          terms,
 		PositiveFilter: posFilter,
 		NegativeFilter: negFilter,
+		TargetType:     targetType,
 		SortMode:       sortMode,
 	}
 
@@ -309,7 +517,11 @@ func realizarBusca(reader *bufio.Reader) bool {
 	fmt.Println()
 	fmt.Println(Bold + ThemeGreen + "Busca concluida." + Reset)
 	fmt.Printf("Arquivos analisados: %s%d%s\n", ThemeCyan, result.ScannedFiles, Reset)
-	fmt.Printf("Ocorrencias encontradas: %s%d%s\n", ThemeGreen, len(result.Matches), Reset)
+	if config.TargetType == TargetDirectories {
+		fmt.Printf("Pastas unicas encontradas: %s%d%s\n", ThemeGreen, len(result.Matches), Reset)
+	} else {
+		fmt.Printf("Ocorrencias encontradas: %s%d%s\n", ThemeGreen, len(result.Matches), Reset)
+	}
 	fmt.Printf("Tempo total: %s%s%s\n", ThemeYellow, time.Since(start).Round(time.Millisecond), Reset)
 	fmt.Printf("Relatorio salvo em: %s%s%s\n", ThemeCyan, result.ReportPath, Reset)
 	promptAndShowMatches(reader, result.Matches)
@@ -321,6 +533,7 @@ func realizarBuscaRapida(reader *bufio.Reader) bool {
 	terms := promptTerms(reader)
 	posFilter := promptPositiveFilter(reader)
 	negFilter := promptNegativeFilter(reader)
+	targetType := promptTargetType(reader)
 	if len(terms) == 0 {
 		fmt.Println(Red + "Nenhum termo informado." + Reset)
 		return false
@@ -332,10 +545,18 @@ func realizarBuscaRapida(reader *bufio.Reader) bool {
 	start := time.Now()
 	matches := searchFilenamesInDB(terms, posFilter, negFilter)
 
+	if targetType == TargetDirectories {
+		matches = convertToUniqueDirectoryMatches(matches)
+	}
+
 	sortMatches(matches, sortMode)
 
 	fmt.Printf("\nBusca concluida em %s%s%s.\n", ThemeYellow, time.Since(start).Round(time.Millisecond), Reset)
-	fmt.Printf("Ocorrencias encontradas no banco: %s%d%s\n", ThemeGreen, len(matches), Reset)
+	if targetType == TargetDirectories {
+		fmt.Printf("Pastas unicas encontradas no banco: %s%d%s\n", ThemeGreen, len(matches), Reset)
+	} else {
+		fmt.Printf("Ocorrencias encontradas no banco: %s%d%s\n", ThemeGreen, len(matches), Reset)
+	}
 
 	if len(matches) > 0 {
 		config := SearchConfig{
@@ -343,6 +564,7 @@ func realizarBuscaRapida(reader *bufio.Reader) bool {
 			Terms:          terms,
 			PositiveFilter: posFilter,
 			NegativeFilter: negFilter,
+			TargetType:     targetType,
 			Mode:           ModeName,
 			SortMode:       sortMode,
 		}
@@ -697,11 +919,16 @@ func abrirPastasPassoAPasso(reader *bufio.Reader, matches []Match) bool {
 		return false
 	}
 
-	// Extrair pastas únicas dos arquivos encontrados
+	// Extrair pastas únicas dos resultados encontrados
 	var dirs []string
 	seen := make(map[string]bool)
 	for _, m := range matches {
-		dir := filepath.Dir(m.Path)
+		var dir string
+		if strings.HasPrefix(m.Kind, "diretorio") {
+			dir = m.Path
+		} else {
+			dir = filepath.Dir(m.Path)
+		}
 		if !seen[dir] {
 			seen[dir] = true
 			dirs = append(dirs, dir)
@@ -786,6 +1013,65 @@ func promptPositiveFilter(reader *bufio.Reader) []string {
 func promptNegativeFilter(reader *bufio.Reader) []string {
 	raw := prompt(reader, Bold+"Filtro NEGATIVO no caminho/nome (separados por ';', ex: tmp;backup ou Enter para nenhum): "+Reset)
 	return parseFilterTerms(raw)
+}
+
+func promptTargetType(reader *bufio.Reader) TargetType {
+	fmt.Println()
+	fmt.Println(Bold + "Buscar por:" + Reset)
+	fmt.Println("  1 - Arquivos [padrao]")
+	fmt.Println("  2 - Apenas diretorios (pastas unicas)")
+
+	ans := prompt(reader, Bold+"Escolha uma opcao (1/2 ou Enter para padrao [1]): "+Reset)
+	ans = strings.TrimSpace(ans)
+	if ans == "2" {
+		return TargetDirectories
+	}
+	return TargetFiles
+}
+
+func targetLabel(target TargetType) string {
+	if target == TargetDirectories {
+		return "diretorios"
+	}
+	return "arquivos"
+}
+
+func convertToUniqueDirectoryMatches(matches []Match) []Match {
+	seen := make(map[string]bool)
+	var dirMatches []Match
+	for _, m := range matches {
+		var dir string
+		if strings.HasPrefix(m.Kind, "diretorio") {
+			dir = m.Path
+		} else {
+			dir = filepath.Dir(m.Path)
+		}
+		if !seen[dir] {
+			seen[dir] = true
+			var size int64
+			var modTime time.Time
+			if info, err := os.Stat(dir); err == nil {
+				size = info.Size()
+				modTime = info.ModTime()
+			} else {
+				size = m.Size
+				modTime = m.ModTime
+			}
+			kind := "diretorio"
+			if strings.Contains(m.Kind, "banco") {
+				kind = "diretorio (banco)"
+			}
+			dirMatches = append(dirMatches, Match{
+				Path:    dir,
+				Kind:    kind,
+				Line:    0,
+				Text:    "",
+				Size:    size,
+				ModTime: modTime,
+			})
+		}
+	}
+	return dirMatches
 }
 
 func parseFilterTerms(raw string) []string {
@@ -968,6 +1254,7 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 	var collector sync.WaitGroup
 	var matches []Match
 	var matchMu sync.Mutex
+	var liveDirSeen sync.Map
 
 	collector.Add(1)
 	go func() {
@@ -979,7 +1266,37 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 			matchMu.Lock()
 			matches = append(matches, batch...)
 			matchMu.Unlock()
-			showFound(batch, config.Terms)
+
+			if config.TargetType == TargetDirectories {
+				var dirBatch []Match
+				for _, m := range batch {
+					dir := filepath.Dir(m.Path)
+					if _, loaded := liveDirSeen.LoadOrStore(dir, true); !loaded {
+						var size int64
+						var modTime time.Time
+						if info, err := os.Stat(dir); err == nil {
+							size = info.Size()
+							modTime = info.ModTime()
+						} else {
+							size = m.Size
+							modTime = m.ModTime
+						}
+						dirBatch = append(dirBatch, Match{
+							Path:    dir,
+							Kind:    "diretorio",
+							Line:    0,
+							Text:    "",
+							Size:    size,
+							ModTime: modTime,
+						})
+					}
+				}
+				if len(dirBatch) > 0 {
+					showFound(dirBatch, config.Terms)
+				}
+			} else {
+				showFound(batch, config.Terms)
+			}
 		}
 	}()
 
@@ -1036,6 +1353,10 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 	totalScanned := int(scannedFiles.Load())
 	fmt.Printf("\r%sAnalisando arquivos...%s %s%d%s | workers: %s%d%s\n",
 		ThemeCyan, Reset, ThemeGreen, totalScanned, Reset, ThemeYellow, workerCount, Reset)
+
+	if config.TargetType == TargetDirectories {
+		matches = convertToUniqueDirectoryMatches(matches)
+	}
 
 	sortMatches(matches, config.SortMode)
 
@@ -1278,6 +1599,7 @@ func createReport(config SearchConfig) (*ReportWriter, error) {
 	fmt.Fprintf(writer, "data_inicio = %q\n", time.Now().Format("2006-01-02 15:04:05.000"))
 	fmt.Fprintf(writer, "pasta_base = %q\n", config.BaseDir)
 	fmt.Fprintf(writer, "modo = %q\n", modeLabel(config.Mode))
+	fmt.Fprintf(writer, "alvo = %q\n", targetLabel(config.TargetType))
 	fmt.Fprintf(writer, "termos = [%s]\n", formatTOMLStringList(config.Terms))
 
 	if len(config.PositiveFilter) == 0 {
@@ -1350,6 +1672,9 @@ func (r *ReportWriter) Close() error {
 
 func formatMatch(match Match, terms []string) string {
 	highlightedPath := highlightTerms(match.Path, terms)
+	if strings.HasPrefix(match.Kind, "diretorio") {
+		return fmt.Sprintf("%sPasta:%s %s | %s[Diretorio]%s", ThemeCyan, Reset, highlightedPath, Bold+ThemeGreen, Reset)
+	}
 	line := fmt.Sprintf("%sArquivo:%s %s", ThemeCyan, Reset, highlightedPath)
 	if match.Kind == "conteudo" {
 		highlightedText := highlightTerms(match.Text, terms)
@@ -1507,7 +1832,7 @@ func exibirTabelaResultados(matches []Match, limit int) {
 	fmt.Printf("\nExibindo os ultimos %d de %d resultados:\n", limit, len(matches))
 	
 	// Define largura dinamica da coluna de caminho para nao cortar o endereco do arquivo
-	pathHeader := "Caminho do Arquivo"
+	pathHeader := "Caminho do Arquivo / Pasta"
 	pathWidth := len(pathHeader)
 	for i := 0; i < limit; i++ {
 		if len(matches[i].Path) > pathWidth {
@@ -1557,6 +1882,8 @@ func exibirTabelaResultados(matches []Match, limit int) {
 		kindLabel := m.Kind
 		if kindLabel == "nome (banco)" {
 			kindLabel = "nome"
+		} else if kindLabel == "diretorio (banco)" {
+			kindLabel = "diretorio"
 		}
 
 		snippet := strings.TrimSpace(m.Text)
