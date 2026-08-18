@@ -11,7 +11,7 @@ Este projeto e uma ideia simples para resolver um problema simples:
 - buscar arquivos pelo nome
 - buscar ocorrencias dentro do conteudo
 - buscar recursivamente em subpastas
-- salvar tudo em `.toml`
+- salvar relatórios em `.csv`, `.json` ou `.toml` (com `.csv` como padrão)
 - deixar o codigo aberto e facil de auditar
 
 O projeto foi escrito em Go e esta pronto para uso.
@@ -44,7 +44,7 @@ Este projeto foi projetado com foco em velocidade máxima e eficiência de recur
 * **Autotuning por Disco**: No primeiro crawler em uma unidade de disco (ex: `C:`, `D:`), o programa realiza um benchmark dinâmico (2, 4, 8 e 16 threads) para encontrar a concorrência ótima e salva o perfil no banco para indexações futuras.
 * **Gravação Otimizada**: Indexação em segundo plano e escrita no BoltDB em lotes periódicos de 5.000 arquivos, mantendo a RAM baixa e velocidade alta.
 * **Abertura Passo a Passo**: Após a busca, permite iterar e abrir as pastas dos resultados diretamente no Gerenciador de Arquivos pressionando `Enter` (ou sair digitando `q`).
-* **Relatórios Estruturados**: Salva relatórios detalhados contendo dados de metadados e resultados estruturados em formato **TOML** na pasta `resultados_busca/`.
+* **Relatórios Estruturados**: Salva relatórios detalhados contendo dados de metadados e resultados estruturados nos formatos **CSV**, **JSON** ou **TOML** (com a preferência do usuário salva no banco de dados e **CSV** definido como padrão).
 
 ## Arquivos incluidos no repositorio
 

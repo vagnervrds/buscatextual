@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -119,6 +120,7 @@ type SearchConfig struct {
 	NegativeFilter []string
 	TargetType     TargetType
 	SortMode       SortMode
+	ReportFormat   string
 }
 
 type SearchResult struct {
@@ -493,6 +495,7 @@ func realizarBusca(reader *bufio.Reader) bool {
 	}
 
 	sortMode := promptSortMode(reader)
+	reportFormat := promptReportFormat(reader)
 
 	fmt.Println()
 	fmt.Println(Bold + ThemeYellow + "Iniciando busca no disco e atualizando banco assincronamente..." + Reset)
@@ -506,6 +509,7 @@ func realizarBusca(reader *bufio.Reader) bool {
 		NegativeFilter: negFilter,
 		TargetType:     targetType,
 		SortMode:       sortMode,
+		ReportFormat:   reportFormat,
 	}
 
 	result, err := runSearch(config)
@@ -540,6 +544,7 @@ func realizarBuscaRapida(reader *bufio.Reader) bool {
 	}
 
 	sortMode := promptSortMode(reader)
+	reportFormat := promptReportFormat(reader)
 
 	fmt.Println(Bold + ThemeYellow + "Buscando no banco de dados..." + Reset)
 	start := time.Now()
@@ -567,6 +572,7 @@ func realizarBuscaRapida(reader *bufio.Reader) bool {
 			TargetType:     targetType,
 			Mode:           ModeName,
 			SortMode:       sortMode,
+			ReportFormat:   reportFormat,
 		}
 		reporter, _ := createReport(config)
 		if reporter != nil {
@@ -1090,13 +1096,16 @@ func parseFilterTerms(raw string) []string {
 func realizarConfiguracoes(reader *bufio.Reader) {
 	for {
 		currentLimit := getMaxSearchHistory()
+		currentFormat := getReportFormat()
 		fmt.Println()
 		fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
 		fmt.Println(Bold + " Configuracoes" + Reset)
 		fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
-		fmt.Printf(" Limite atual de relatorios na pasta /resultados_busca: %s%d%s\n\n", Bold+ThemeGreen, currentLimit, Reset)
+		fmt.Printf(" Limite atual de relatorios na pasta /resultados_busca: %s%d%s\n", Bold+ThemeGreen, currentLimit, Reset)
+		fmt.Printf(" Formato padrao do relatorio: %s%s%s\n\n", Bold+ThemeGreen, strings.ToUpper(currentFormat), Reset)
 		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Alterar limite de arquivos de historico\n")
-		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Voltar ao menu principal\n")
+		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Alterar formato do relatorio (csv, json, toml)\n")
+		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Voltar ao menu principal\n")
 		fmt.Println(Bold + ThemeCyan + "--------------------------------------------------" + Reset)
 
 		opcao := prompt(reader, Bold+"Escolha uma opcao: "+Reset)
@@ -1119,11 +1128,51 @@ func realizarConfiguracoes(reader *bufio.Reader) {
 				}
 			}
 		case "2":
+			newFmt := promptReportFormat(reader)
+			fmt.Printf(ThemeGreen+"Formato do relatorio salvo como %s com sucesso!\n"+Reset, strings.ToUpper(newFmt))
+		case "3":
 			return
 		default:
 			fmt.Println(Red + "Opcao invalida. Tente novamente." + Reset)
 		}
 	}
+}
+
+func promptReportFormat(reader *bufio.Reader) string {
+	currentFormat := getReportFormat()
+	fmt.Println()
+	fmt.Println(Bold + "Formato de saida do relatorio:" + Reset)
+	fmt.Printf("  1 - CSV %s\n", formatSuffix("csv", currentFormat))
+	fmt.Printf("  2 - JSON %s\n", formatSuffix("json", currentFormat))
+	fmt.Printf("  3 - TOML %s\n", formatSuffix("toml", currentFormat))
+
+	opcao := prompt(reader, fmt.Sprintf(Bold+"Escolha uma opcao (1-3 ou Enter para '%s'): "+Reset, currentFormat))
+	opcao = strings.TrimSpace(strings.ToLower(opcao))
+
+	selected := currentFormat
+	switch opcao {
+	case "1", "csv":
+		selected = "csv"
+	case "2", "json":
+		selected = "json"
+	case "3", "toml":
+		selected = "toml"
+	case "":
+		selected = currentFormat
+	default:
+		fmt.Printf(Yellow+"Opcao invalida. Mantendo formato '%s'.\n"+Reset, currentFormat)
+		selected = currentFormat
+	}
+
+	_ = saveReportFormat(selected)
+	return selected
+}
+
+func formatSuffix(fmtOption string, current string) string {
+	if fmtOption == current {
+		return Bold + ThemeGreen + "[padrao/atual]" + Reset
+	}
+	return ""
 }
 
 func promptSortMode(reader *bufio.Reader) SortMode {
@@ -1421,7 +1470,8 @@ func cleanOldSearchHistory(reportDir string) {
 
 	var files []reportFileInfo
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "resultado_busca_") && strings.HasSuffix(entry.Name(), ".toml") {
+		ext := filepath.Ext(entry.Name())
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "resultado_busca_") && (ext == ".toml" || ext == ".csv" || ext == ".json") {
 			info, err := entry.Info()
 			if err == nil {
 				files = append(files, reportFileInfo{
@@ -1564,8 +1614,20 @@ type ReportWriter struct {
 	File     *os.File
 	Writer   *bufio.Writer
 	Path     string
+	Format   string
+	Config   SearchConfig
+	matches  []Match
 	mu       sync.Mutex
 	hasMatch bool
+	closed   bool
+}
+
+func normalizeFormat(fmtStr string) string {
+	fmtLower := strings.ToLower(strings.TrimSpace(fmtStr))
+	if fmtLower == "csv" || fmtLower == "json" || fmtLower == "toml" {
+		return fmtLower
+	}
+	return "csv"
 }
 
 func createReport(config SearchConfig) (*ReportWriter, error) {
@@ -1576,8 +1638,13 @@ func createReport(config SearchConfig) (*ReportWriter, error) {
 
 	cleanOldSearchHistory(reportDir)
 
+	format := normalizeFormat(config.ReportFormat)
+	if config.ReportFormat == "" {
+		format = getReportFormat()
+	}
+
 	timestamp := strings.ReplaceAll(time.Now().Format("20060102_150405.000"), ".", "_")
-	fileName := fmt.Sprintf("resultado_busca_%s.toml", timestamp)
+	fileName := fmt.Sprintf("resultado_busca_%s.%s", timestamp, format)
 	filePath, err := filepath.Abs(filepath.Join(reportDir, fileName))
 	if err != nil {
 		return nil, err
@@ -1593,30 +1660,60 @@ func createReport(config SearchConfig) (*ReportWriter, error) {
 		File:   file,
 		Writer: writer,
 		Path:   filePath,
+		Format: format,
+		Config: config,
 	}
 
-	fmt.Fprintf(writer, "[metadados]\n")
-	fmt.Fprintf(writer, "data_inicio = %q\n", time.Now().Format("2006-01-02 15:04:05.000"))
-	fmt.Fprintf(writer, "pasta_base = %q\n", config.BaseDir)
-	fmt.Fprintf(writer, "modo = %q\n", modeLabel(config.Mode))
-	fmt.Fprintf(writer, "alvo = %q\n", targetLabel(config.TargetType))
-	fmt.Fprintf(writer, "termos = [%s]\n", formatTOMLStringList(config.Terms))
+	switch format {
+	case "toml":
+		fmt.Fprintf(writer, "[metadados]\n")
+		fmt.Fprintf(writer, "data_inicio = %q\n", time.Now().Format("2006-01-02 15:04:05.000"))
+		fmt.Fprintf(writer, "pasta_base = %q\n", config.BaseDir)
+		fmt.Fprintf(writer, "modo = %q\n", modeLabel(config.Mode))
+		fmt.Fprintf(writer, "alvo = %q\n", targetLabel(config.TargetType))
+		fmt.Fprintf(writer, "termos = [%s]\n", formatTOMLStringList(config.Terms))
 
-	if len(config.PositiveFilter) == 0 {
-		fmt.Fprintf(writer, "filtros_positivos = \"todos\"\n")
-	} else {
-		fmt.Fprintf(writer, "filtros_positivos = [%s]\n", formatTOMLStringList(config.PositiveFilter))
-	}
-	if len(config.NegativeFilter) == 0 {
-		fmt.Fprintf(writer, "filtros_negativos = \"nenhum\"\n")
-	} else {
-		fmt.Fprintf(writer, "filtros_negativos = [%s]\n", formatTOMLStringList(config.NegativeFilter))
-	}
-	fmt.Fprintf(writer, "\n")
+		if len(config.PositiveFilter) == 0 {
+			fmt.Fprintf(writer, "filtros_positivos = \"todos\"\n")
+		} else {
+			fmt.Fprintf(writer, "filtros_positivos = [%s]\n", formatTOMLStringList(config.PositiveFilter))
+		}
+		if len(config.NegativeFilter) == 0 {
+			fmt.Fprintf(writer, "filtros_negativos = \"nenhum\"\n")
+		} else {
+			fmt.Fprintf(writer, "filtros_negativos = [%s]\n", formatTOMLStringList(config.NegativeFilter))
+		}
+		fmt.Fprintf(writer, "\n")
+		_ = writer.Flush()
 
-	if err := writer.Flush(); err != nil {
-		file.Close()
-		return nil, err
+	case "csv":
+		fmt.Fprintf(writer, "# Metadados\n")
+		fmt.Fprintf(writer, "# Data Inicio: %s\n", time.Now().Format("2006-01-02 15:04:05.000"))
+		fmt.Fprintf(writer, "# Pasta Base: %s\n", config.BaseDir)
+		fmt.Fprintf(writer, "# Modo: %s\n", modeLabel(config.Mode))
+		fmt.Fprintf(writer, "# Alvo: %s\n", targetLabel(config.TargetType))
+		fmt.Fprintf(writer, "# Termos: %s\n", strings.Join(config.Terms, ", "))
+
+		if len(config.PositiveFilter) == 0 {
+			fmt.Fprintf(writer, "# Filtros Positivos: todos\n")
+		} else {
+			fmt.Fprintf(writer, "# Filtros Positivos: %s\n", strings.Join(config.PositiveFilter, ", "))
+		}
+		if len(config.NegativeFilter) == 0 {
+			fmt.Fprintf(writer, "# Filtros Negativos: nenhum\n")
+		} else {
+			fmt.Fprintf(writer, "# Filtros Negativos: %s\n", strings.Join(config.NegativeFilter, ", "))
+		}
+		fmt.Fprintf(writer, "\n")
+		_ = writer.Flush()
+
+		csvWriter := csv.NewWriter(writer)
+		_ = csvWriter.Write([]string{"Arquivo", "Tipo", "Linha", "Trecho", "Tamanho_Bytes", "Data_Modificacao"})
+		csvWriter.Flush()
+		_ = writer.Flush()
+
+	case "json":
+		// Para JSON, acumulamos os registros em memoria e escrevemos a estrutura completa no Close().
 	}
 
 	return reporter, nil
@@ -1626,24 +1723,62 @@ func (r *ReportWriter) Append(matches []Match) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, match := range matches {
-		fmt.Fprintf(r.Writer, "[[resultados]]\n")
-		fmt.Fprintf(r.Writer, "arquivo = %q\n", match.Path)
-		fmt.Fprintf(r.Writer, "tipo = %q\n", match.Kind)
-		if match.Kind == "conteudo" {
-			fmt.Fprintf(r.Writer, "linha = %d\n", match.Line)
-			fmt.Fprintf(r.Writer, "trecho = %q\n", match.Text)
-		}
-		fmt.Fprintf(r.Writer, "tamanho_bytes = %d\n", match.Size)
-		if !match.ModTime.IsZero() {
-			fmt.Fprintf(r.Writer, "data_modificacao = %q\n", match.ModTime.Format("2006-01-02 15:04:05"))
-		} else {
-			fmt.Fprintf(r.Writer, "data_modificacao = %q\n", "")
-		}
-		fmt.Fprintf(r.Writer, "\n")
+	r.matches = append(r.matches, matches...)
+	if len(matches) > 0 {
 		r.hasMatch = true
 	}
-	return r.Writer.Flush()
+
+	switch r.Format {
+	case "toml":
+		for _, match := range matches {
+			fmt.Fprintf(r.Writer, "[[resultados]]\n")
+			fmt.Fprintf(r.Writer, "arquivo = %q\n", match.Path)
+			fmt.Fprintf(r.Writer, "tipo = %q\n", match.Kind)
+			if match.Kind == "conteudo" {
+				fmt.Fprintf(r.Writer, "linha = %d\n", match.Line)
+				fmt.Fprintf(r.Writer, "trecho = %q\n", match.Text)
+			}
+			fmt.Fprintf(r.Writer, "tamanho_bytes = %d\n", match.Size)
+			if !match.ModTime.IsZero() {
+				fmt.Fprintf(r.Writer, "data_modificacao = %q\n", match.ModTime.Format("2006-01-02 15:04:05"))
+			} else {
+				fmt.Fprintf(r.Writer, "data_modificacao = %q\n", "")
+			}
+			fmt.Fprintf(r.Writer, "\n")
+		}
+		return r.Writer.Flush()
+
+	case "csv":
+		csvWriter := csv.NewWriter(r.Writer)
+		for _, match := range matches {
+			lineStr := ""
+			if match.Kind == "conteudo" {
+				lineStr = strconv.Itoa(match.Line)
+			}
+			dateStr := ""
+			if !match.ModTime.IsZero() {
+				dateStr = match.ModTime.Format("2006-01-02 15:04:05")
+			}
+			rec := []string{
+				match.Path,
+				match.Kind,
+				lineStr,
+				match.Text,
+				strconv.FormatInt(match.Size, 10),
+				dateStr,
+			}
+			if err := csvWriter.Write(rec); err != nil {
+				return err
+			}
+		}
+		csvWriter.Flush()
+		return r.Writer.Flush()
+
+	case "json":
+		return nil
+	}
+
+	return nil
 }
 
 func (r *ReportWriter) WriteNoMatches() error {
@@ -1653,15 +1788,132 @@ func (r *ReportWriter) WriteNoMatches() error {
 	if r.hasMatch {
 		return nil
 	}
-	if _, err := r.Writer.WriteString("# Nenhuma ocorrencia encontrada.\nresultados = []\n"); err != nil {
+
+	switch r.Format {
+	case "toml":
+		if _, err := r.Writer.WriteString("# Nenhuma ocorrencia encontrada.\nresultados = []\n"); err != nil {
+			return err
+		}
+		return r.Writer.Flush()
+
+	case "csv":
+		if _, err := r.Writer.WriteString("# Nenhuma ocorrencia encontrada.\n"); err != nil {
+			return err
+		}
+		return r.Writer.Flush()
+
+	case "json":
+		return nil
+	}
+
+	return nil
+}
+
+type ReportMetadataJSON struct {
+	DataInicio       string   `json:"data_inicio"`
+	PastaBase        string   `json:"pasta_base"`
+	Modo             string   `json:"modo"`
+	Alvo             string   `json:"alvo"`
+	Termos           []string `json:"termos"`
+	FiltrosPositivos any      `json:"filtros_positivos"`
+	FiltrosNegativos any      `json:"filtros_negativos"`
+}
+
+type ReportMatchJSON struct {
+	Arquivo         string  `json:"arquivo"`
+	Tipo            string  `json:"tipo"`
+	Linha           *int    `json:"linha,omitempty"`
+	Trecho          *string `json:"trecho,omitempty"`
+	TamanhoBytes    int64   `json:"tamanho_bytes"`
+	DataModificacao string  `json:"data_modificacao"`
+}
+
+type ReportJSON struct {
+	Metadados  ReportMetadataJSON `json:"metadados"`
+	Resultados []ReportMatchJSON  `json:"resultados"`
+}
+
+func (r *ReportWriter) writeJSON() error {
+	var posFilter any = "todos"
+	if len(r.Config.PositiveFilter) > 0 {
+		posFilter = r.Config.PositiveFilter
+	}
+
+	var negFilter any = "nenhum"
+	if len(r.Config.NegativeFilter) > 0 {
+		negFilter = r.Config.NegativeFilter
+	}
+
+	meta := ReportMetadataJSON{
+		DataInicio:       time.Now().Format("2006-01-02 15:04:05.000"),
+		PastaBase:        r.Config.BaseDir,
+		Modo:             modeLabel(r.Config.Mode),
+		Alvo:             targetLabel(r.Config.TargetType),
+		Termos:           r.Config.Terms,
+		FiltrosPositivos: posFilter,
+		FiltrosNegativos: negFilter,
+	}
+
+	resultados := make([]ReportMatchJSON, 0, len(r.matches))
+	for _, m := range r.matches {
+		var linePtr *int
+		var textPtr *string
+		if m.Kind == "conteudo" {
+			lineVal := m.Line
+			textVal := m.Text
+			linePtr = &lineVal
+			textPtr = &textVal
+		}
+
+		modTimeStr := ""
+		if !m.ModTime.IsZero() {
+			modTimeStr = m.ModTime.Format("2006-01-02 15:04:05")
+		}
+
+		resultados = append(resultados, ReportMatchJSON{
+			Arquivo:         m.Path,
+			Tipo:            m.Kind,
+			Linha:           linePtr,
+			Trecho:          textPtr,
+			TamanhoBytes:    m.Size,
+			DataModificacao: modTimeStr,
+		})
+	}
+
+	rep := ReportJSON{
+		Metadados:  meta,
+		Resultados: resultados,
+	}
+
+	data, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
 		return err
 	}
-	return r.Writer.Flush()
+
+	_, err = r.Writer.Write(data)
+	if err != nil {
+		return err
+	}
+	_, err = r.Writer.WriteString("\n")
+	return err
 }
 
 func (r *ReportWriter) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if r.closed {
+		return nil
+	}
+	r.closed = true
+
+	if r.Format == "json" {
+		if err := r.writeJSON(); err != nil {
+			_ = r.Writer.Flush()
+			_ = r.File.Close()
+			return err
+		}
+	}
 
 	if err := r.Writer.Flush(); err != nil {
 		_ = r.File.Close()

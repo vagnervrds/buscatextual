@@ -144,6 +144,53 @@ func saveMaxSearchHistory(limit int) error {
 	})
 }
 
+func getReportFormat() string {
+	defaultFormat := "csv"
+	if db == nil {
+		return defaultFormat
+	}
+	var format string = defaultFormat
+	_ = db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("AppConfig"))
+		if b == nil {
+			return nil
+		}
+		v := b.Get([]byte("report_format"))
+		if v != nil {
+			var val string
+			if err := json.Unmarshal(v, &val); err == nil && val != "" {
+				valLower := strings.ToLower(strings.TrimSpace(val))
+				if valLower == "csv" || valLower == "json" || valLower == "toml" {
+					format = valLower
+				}
+			}
+		}
+		return nil
+	})
+	return format
+}
+
+func saveReportFormat(format string) error {
+	if db == nil {
+		return fmt.Errorf("banco de dados nao inicializado")
+	}
+	formatLower := strings.ToLower(strings.TrimSpace(format))
+	if formatLower != "csv" && formatLower != "json" && formatLower != "toml" {
+		return fmt.Errorf("formato invalido: %s", format)
+	}
+	return db.Update(func(tx *bbolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte("AppConfig"))
+		if err != nil {
+			return err
+		}
+		buf, err := json.Marshal(formatLower)
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte("report_format"), buf)
+	})
+}
+
 // putIndexHelper é uma função auxiliar para salvar metadados em um bucket aberto
 func putIndexHelper(b *bbolt.Bucket, path string, size int64, modTimeStr string) error {
 	v := b.Get([]byte(path))
