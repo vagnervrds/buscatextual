@@ -5,7 +5,6 @@
 *.exe
 !buscatextual.exe
 *.syso
-build.json
 resultados_busca/
 resultado_busca_*.txt
 teste_cli/

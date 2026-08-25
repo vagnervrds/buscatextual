@@ -289,15 +289,36 @@ func getLocalBuildNumber() int {
 
 func checkUpdate() (hasUpdate bool, remoteBuild int, err error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get("https://raw.githubusercontent.com/vagnervrds/buscatextual/main/build.json")
-	if err != nil {
-		return false, 0, fmt.Errorf("falha ao conectar ao GitHub: %v", err)
+	urls := []string{
+		"https://raw.githubusercontent.com/vagnervrds/buscatextual/master/build.json",
+		"https://raw.githubusercontent.com/vagnervrds/buscatextual/main/build.json",
+	}
+
+	var resp *http.Response
+	var lastErr error
+	for _, url := range urls {
+		r, err := client.Get(url)
+		if err == nil && r.StatusCode == http.StatusOK {
+			resp = r
+			break
+		}
+		if r != nil {
+			r.Body.Close()
+		}
+		if err != nil {
+			lastErr = err
+		} else if r != nil {
+			lastErr = fmt.Errorf("resposta invalida do GitHub (HTTP %d)", r.StatusCode)
+		}
+	}
+
+	if resp == nil {
+		if lastErr != nil {
+			return false, 0, fmt.Errorf("falha ao conectar ao GitHub: %v", lastErr)
+		}
+		return false, 0, fmt.Errorf("nao foi possivel obter o arquivo de versao do GitHub")
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return false, 0, fmt.Errorf("resposta invalida do GitHub (HTTP %d)", resp.StatusCode)
-	}
 
 	var remoteInfo RemoteBuildInfo
 	if err := json.NewDecoder(resp.Body).Decode(&remoteInfo); err != nil {
@@ -341,6 +362,7 @@ func downloadAndUpdate(remoteBuild int) error {
 
 	urls := []string{
 		"https://github.com/vagnervrds/buscatextual/releases/latest/download/buscatextual.exe",
+		"https://raw.githubusercontent.com/vagnervrds/buscatextual/master/buscatextual.exe",
 		"https://raw.githubusercontent.com/vagnervrds/buscatextual/main/buscatextual.exe",
 	}
 
