@@ -528,7 +528,6 @@ func realizarBusca(reader *bufio.Reader) bool {
 	}
 	fmt.Printf("Tempo total: %s%s%s\n", ThemeYellow, time.Since(start).Round(time.Millisecond), Reset)
 	fmt.Printf("Relatorio salvo em: %s%s%s\n", ThemeCyan, result.ReportPath, Reset)
-	promptAndShowMatches(reader, result.Matches)
 
 	return !postSearchMenu(reader, result.ReportPath, result.Matches)
 }
@@ -579,7 +578,6 @@ func realizarBuscaRapida(reader *bufio.Reader) bool {
 			_ = reporter.Append(matches)
 			reporter.Close()
 			fmt.Printf("Relatorio salvo em: %s%s%s\n", ThemeCyan, reporter.Path, Reset)
-			promptAndShowMatches(reader, matches)
 			return !postSearchMenu(reader, reporter.Path, matches)
 		}
 	} else {
@@ -898,10 +896,11 @@ func postSearchMenu(reader *bufio.Reader, reportPath string, matches []Match) bo
 		fmt.Println(Bold + "O que deseja fazer agora?" + Reset)
 		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Abrir arquivo de relatorio\n")
 		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Abrir pastas dos resultados passo a passo\n")
-		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Voltar ao menu principal\n")
-		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Sair\n")
+		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Ver resultados no terminal\n")
+		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Voltar ao menu principal\n")
+		fmt.Printf("  "+ThemeYellow+"5"+Reset+" - Sair\n")
 
-		switch prompt(reader, Bold+"Escolha uma opcao (1/2/3/4): "+Reset) {
+		switch prompt(reader, Bold+"Escolha uma opcao (1/2/3/4/5): "+Reset) {
 		case "1":
 			openFile(reportPath)
 		case "2":
@@ -910,8 +909,10 @@ func postSearchMenu(reader *bufio.Reader, reportPath string, matches []Match) bo
 				return true
 			}
 		case "3":
-			return true
+			exibirResultadosTerminal(reader, matches)
 		case "4":
+			return true
+		case "5":
 			return false
 		default:
 			fmt.Println(Red + "Opcao invalida." + Reset)
@@ -2028,23 +2029,24 @@ func formatTOMLStringList(list []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-func promptAndShowMatches(reader *bufio.Reader, matches []Match) {
+func exibirResultadosTerminal(reader *bufio.Reader, matches []Match) {
 	if len(matches) == 0 {
+		fmt.Println(Yellow + "Nenhum resultado para exibir." + Reset)
 		return
 	}
 
 	fmt.Println()
-	opcao := prompt(reader, Bold+"Deseja exibir os resultados no terminal? Insira a quantidade (padrao: 10, 0 para nenhum, maximo 100): "+Reset)
-	opcaoLower := strings.ToLower(strings.TrimSpace(opcao))
+	fmt.Println(Bold + "Formato de exibicao dos resultados:" + Reset)
+	fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Simplificado (uma linha por arquivo/pasta, sem metadados) [%sPadrao%s]\n", Bold+ThemeGreen, Reset)
+	fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Tabela completa (tipo, linha, tamanho, data, trecho)\n")
+	formato := strings.TrimSpace(prompt(reader, Bold+"Escolha o formato (1/2) [padrao: 1]: "+Reset))
 
-	if opcaoLower == "0" || opcaoLower == "n" || opcaoLower == "nao" {
-		return
-	}
-
+	qtdStr := strings.TrimSpace(prompt(reader, Bold+"Quantidade de linhas a exibir (padrao: 10, maximo 100): "+Reset))
 	limit := 10
-	if opcaoLower != "" && opcaoLower != "s" && opcaoLower != "sim" {
-		if val, err := strconv.Atoi(opcaoLower); err == nil {
+	if qtdStr != "" {
+		if val, err := strconv.Atoi(qtdStr); err == nil {
 			if val <= 0 {
+				fmt.Println(Yellow + "Quantidade invalida ou zero. Exibicao cancelada." + Reset)
 				return
 			}
 			limit = val
@@ -2055,7 +2057,29 @@ func promptAndShowMatches(reader *bufio.Reader, matches []Match) {
 		limit = 100
 	}
 
-	exibirTabelaResultados(matches, limit)
+	if formato == "2" || strings.ToLower(formato) == "tabela" {
+		exibirTabelaResultados(matches, limit)
+	} else {
+		exibirResultadosSimplificados(matches, limit)
+	}
+}
+
+func exibirResultadosSimplificados(matches []Match, limit int) {
+	if len(matches) == 0 {
+		return
+	}
+
+	if limit > len(matches) {
+		limit = len(matches)
+	}
+
+	fmt.Println()
+	fmt.Printf("Exibindo os primeiros %d de %d resultados (simplificado):\n", limit, len(matches))
+	fmt.Println(Bold + ThemeCyan + "--------------------------------------------------" + Reset)
+	for i := 0; i < limit; i++ {
+		fmt.Println(matches[i].Path)
+	}
+	fmt.Println(Bold + ThemeCyan + "--------------------------------------------------" + Reset)
 }
 
 func formatSize(bytes int64) string {
@@ -2081,7 +2105,7 @@ func exibirTabelaResultados(matches []Match, limit int) {
 
 	fmt.Println()
 	fmt.Println(Bold + Yellow + "[Dica] E recomendavel maximizar o terminal para caber mais informacoes sem quebra de linha!" + Reset)
-	fmt.Printf("\nExibindo os ultimos %d de %d resultados:\n", limit, len(matches))
+	fmt.Printf("\nExibindo os primeiros %d de %d resultados:\n", limit, len(matches))
 	
 	// Define largura dinamica da coluna de caminho para nao cortar o endereco do arquivo
 	pathHeader := "Caminho do Arquivo / Pasta"
