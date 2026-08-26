@@ -152,6 +152,11 @@ func (l *ErrorLogger) log(msg string, err error, stack []byte) {
 
 func (l *ErrorLogger) worker() {
 	defer l.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			_ = r
+		}
+	}()
 
 	for entry := range l.msgChan {
 		l.writeEntry(entry)

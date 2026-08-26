@@ -750,6 +750,13 @@ func realizarIndexacao(reader *bufio.Reader) {
 	// Goroutine de gravação em lote no BoltDB
 	dbDone := make(chan int)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				LogRecover(r)
+				dbDone <- 0
+			}
+		}()
+
 		count := 0
 		batchSize := 5000
 		tx, err := db.Begin(true)
@@ -759,7 +766,13 @@ func realizarIndexacao(reader *bufio.Reader) {
 			dbDone <- 0
 			return
 		}
-		b := tx.Bucket([]byte("Files"))
+		b, err := tx.CreateBucketIfNotExists([]byte("Files"))
+		if err != nil {
+			_ = tx.Rollback()
+			LogError("Erro ao acessar bucket Files na indexacao", err)
+			dbDone <- 0
+			return
+		}
 
 		for meta := range fileChan {
 			_ = putIndexHelper(b, meta.Path, meta.Size, meta.ModTime)
@@ -774,7 +787,13 @@ func realizarIndexacao(reader *bufio.Reader) {
 					dbDone <- count
 					return
 				}
-				b = tx.Bucket([]byte("Files"))
+				b, err = tx.CreateBucketIfNotExists([]byte("Files"))
+				if err != nil {
+					_ = tx.Rollback()
+					LogError("Erro ao recriar bucket Files na indexacao", err)
+					dbDone <- count
+					return
+				}
 			}
 		}
 
@@ -802,6 +821,12 @@ func realizarIndexacao(reader *bufio.Reader) {
 
 	var workerFunc func()
 	workerFunc = func() {
+		defer func() {
+			if r := recover(); r != nil {
+				LogRecover(r)
+			}
+		}()
+
 		for {
 			// Controle de escalabilidade para baixo
 			if atomic.LoadInt32(&activeWorkers) > atomic.LoadInt32(&targetWorkers) {
@@ -909,6 +934,12 @@ func realizarIndexacao(reader *bufio.Reader) {
 	// Feedback de progresso
 	progressDone := make(chan struct{})
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				LogRecover(r)
+			}
+		}()
+
 		ticker := time.NewTicker(300 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -1376,28 +1407,53 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 	config.normPosFilter = NormalizeTerms(config.PositiveFilter, config.MatchingMode)
 	config.normNegFilter = NormalizeTerms(config.NegativeFilter, config.MatchingMode)
 
-	workerCount := calculateWorkerCount(config.Mode)
+	workerCount := calculateWorkerCount(config.Mode, config.BaseDir)
 	jobs := make(chan string, workerCount*4)
 	results := make(chan []Match, workerCount)
-	errorsCh := make(chan string, workerCount)
 	reporter, err := createReport(config)
 	if err != nil {
 		return SearchResult{}, err
 	}
 	defer reporter.Close()
 
+	// Acumulador de erros assíncrono e thread-safe para evitar qualquer deadlock
+	var errMessages []string
+	var errMu sync.Mutex
+
 	// Canal para indexação assíncrona no BoltDB durante a busca
 	searchIndexChan := make(chan FileMeta, 10000)
 	indexDone := make(chan struct{})
 	go func() {
 		defer close(indexDone)
+		defer func() {
+			if r := recover(); r != nil {
+				LogRecover(r)
+			}
+		}()
+
+		if db == nil {
+			for range searchIndexChan {
+			}
+			return
+		}
+
 		count := 0
 		batchSize := 2000
 		tx, err := db.Begin(true)
 		if err != nil {
+			LogError("Erro ao iniciar transacao assincrona no banco durante busca", err)
+			for range searchIndexChan {
+			}
 			return
 		}
-		b := tx.Bucket([]byte("Files"))
+		b, err := tx.CreateBucketIfNotExists([]byte("Files"))
+		if err != nil {
+			_ = tx.Rollback()
+			LogError("Erro ao acessar bucket Files durante indexacao na busca", err)
+			for range searchIndexChan {
+			}
+			return
+		}
 
 		for meta := range searchIndexChan {
 			_ = putIndexHelper(b, meta.Path, meta.Size, meta.ModTime)
@@ -1406,9 +1462,19 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 				_ = tx.Commit()
 				tx, err = db.Begin(true)
 				if err != nil {
+					LogError("Erro ao renovar transacao durante indexacao na busca", err)
+					for range searchIndexChan {
+					}
 					return
 				}
-				b = tx.Bucket([]byte("Files"))
+				b, err = tx.CreateBucketIfNotExists([]byte("Files"))
+				if err != nil {
+					_ = tx.Rollback()
+					LogError("Erro ao acessar bucket Files ao renovar transacao", err)
+					for range searchIndexChan {
+					}
+					return
+				}
 			}
 		}
 		_ = tx.Commit()
@@ -1424,6 +1490,12 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 	collector.Add(1)
 	go func() {
 		defer collector.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				LogRecover(r)
+			}
+		}()
+
 		for batch := range results {
 			if len(batch) == 0 {
 				continue
@@ -1469,11 +1541,21 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					LogRecover(r)
+				}
+			}()
+
 			for path := range jobs {
 				fileMatches, err := processFile(path, config.Mode, config.normTerms, config.MatchingMode, searchIndexChan)
 				if err != nil {
 					LogError(fmt.Sprintf("Falha ao processar arquivo %s", path), err)
-					errorsCh <- fmt.Sprintf("Falha ao ler arquivo %s: %v", path, err)
+					errMu.Lock()
+					if len(errMessages) < 50 {
+						errMessages = append(errMessages, fmt.Sprintf("Falha ao ler arquivo %s: %v", path, err))
+					}
+					errMu.Unlock()
 					continue
 				}
 				if len(fileMatches) > 0 {
@@ -1509,13 +1591,14 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 	close(searchIndexChan)
 	<-indexDone
 	close(results)
-	close(errorsCh)
 	collector.Wait()
 	close(progressDone)
 
-	for msg := range errorsCh {
+	errMu.Lock()
+	for _, msg := range errMessages {
 		fmt.Printf("\n%s%s%s\n", Red, msg, Reset)
 	}
+	errMu.Unlock()
 
 	totalScanned := int(scannedFiles.Load())
 	fmt.Printf("\r%sAnalisando arquivos...%s %s%d%s | workers: %s%d%s\n",
@@ -1679,12 +1762,37 @@ func searchInFileName(path string, normTerms []string, mode string) []Match {
 	return nil
 }
 
+func isBinaryBuffer(data []byte) bool {
+	for _, b := range data {
+		if b == 0x00 {
+			return true
+		}
+	}
+	return false
+}
+
 func searchInFile(path string, normTerms []string, mode string) ([]Match, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
+
+	// Detecção rápida de binário: lê os primeiros 512 bytes
+	head := make([]byte, 512)
+	n, err := file.Read(head)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	if n > 0 && isBinaryBuffer(head[:n]) {
+		// Arquivo binário (.exe, .dll, .db, imagens, etc): não processa busca de texto no conteúdo
+		return nil, nil
+	}
+
+	// Reposiciona o cursor no início para leitura do texto
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
 
 	var size int64
 	var modTime time.Time
@@ -1693,38 +1801,66 @@ func searchInFile(path string, normTerms []string, mode string) ([]Match, error)
 		modTime = info.ModTime()
 	}
 
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-
-	var matches []Match
-	lineNumber := 0
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		absPath = path
 	}
 
-	for scanner.Scan() {
-		lineNumber++
-		line := scanner.Text()
-		normLine := NormalizeText(line, mode)
+	reader := bufio.NewReaderSize(file, 64*1024)
+	var matches []Match
+	lineNumber := 0
 
-		for _, term := range normTerms {
-			if strings.Contains(normLine, term) {
-				matches = append(matches, Match{
-					Path:    absPath,
-					Kind:    "conteudo",
-					Line:    lineNumber,
-					Text:    line,
-					Size:    size,
-					ModTime: modTime,
-				})
+	for {
+		lineBytes, isPrefix, err := reader.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return matches, err
+		}
+
+		lineNumber++
+		matchedInLine := false
+		lineSnippet := ""
+
+		for {
+			chunkStr := string(lineBytes)
+			normChunk := NormalizeText(chunkStr, mode)
+
+			if !matchedInLine {
+				for _, term := range normTerms {
+					if strings.Contains(normChunk, term) {
+						matchedInLine = true
+						if len(chunkStr) > 200 {
+							lineSnippet = chunkStr[:200] + "..."
+						} else {
+							lineSnippet = chunkStr
+						}
+						break
+					}
+				}
+			}
+
+			if !isPrefix {
+				break
+			}
+
+			lineBytes, isPrefix, err = reader.ReadLine()
+			if err != nil {
 				break
 			}
 		}
-	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, err
+		if matchedInLine {
+			matches = append(matches, Match{
+				Path:    absPath,
+				Kind:    "conteudo",
+				Line:    lineNumber,
+				Text:    lineSnippet,
+				Size:    size,
+				ModTime: modTime,
+			})
+		}
 	}
 
 	return matches, nil
@@ -2104,29 +2240,52 @@ func showReport(reportPath string) {
 	fmt.Println(string(content))
 }
 
-func calculateWorkerCount(mode SearchMode) int {
+func calculateWorkerCount(mode SearchMode, baseDir string) int {
 	cpuCount := runtime.NumCPU()
 	if cpuCount < 1 {
-		return 1
+		cpuCount = 1
 	}
 
+	diskID := getDiskID(baseDir)
+	optimalThreads := getDiskOptimalThreads(diskID)
+
+	if optimalThreads > 0 {
+		// Se o benchmark de disco já determinou a taxa ótima de I/O
+		if mode == ModeContent || mode == ModeBoth {
+			// Para conteúdo, balanceia a carga entre I/O e CPU
+			if optimalThreads > cpuCount {
+				return cpuCount
+			}
+			return optimalThreads
+		}
+		// Para busca de nome / metadata
+		return optimalThreads
+	}
+
+	// Fallback inteligente caso ainda não haja benchmark calibrado
 	if mode == ModeContent || mode == ModeBoth {
 		if cpuCount <= 2 {
 			return cpuCount
 		}
-		if cpuCount > 6 {
-			return 6
+		if cpuCount > 8 {
+			return 8
 		}
 		return cpuCount
 	}
 
-	if cpuCount > 12 {
-		return 12
+	if cpuCount > 16 {
+		return 16
 	}
 	return cpuCount
 }
 
 func showProgress(scannedFiles *atomic.Int64, workerCount int, done <-chan struct{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			LogRecover(r)
+		}
+	}()
+
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
 

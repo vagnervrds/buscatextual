@@ -51,6 +51,9 @@ func initDB() error {
 
 // searchFilenamesInDB realiza busca apenas pelos nomes no banco de dados com suporte a filtros positivos e negativos e modo amplo/exato
 func searchFilenamesInDB(terms []string, posFilter []string, negFilter []string, mode string) []Match {
+	if db == nil {
+		return nil
+	}
 	if mode == "" {
 		mode = getMatchingMode()
 	}
@@ -302,6 +305,9 @@ func putIndexHelper(b *bbolt.Bucket, path string, size int64, modTimeStr string)
 }
 
 func getDiskOptimalThreads(diskID string) int {
+	if db == nil {
+		return 0
+	}
 	var threads int
 	_ = db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte("DiskConfig"))
@@ -321,10 +327,13 @@ func getDiskOptimalThreads(diskID string) int {
 }
 
 func saveDiskOptimalThreads(diskID string, threads int) error {
+	if db == nil {
+		return fmt.Errorf("banco de dados nao inicializado")
+	}
 	err := db.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("DiskConfig"))
-		if b == nil {
-			return fmt.Errorf("bucket DiskConfig nao existe")
+		b, err := tx.CreateBucketIfNotExists([]byte("DiskConfig"))
+		if err != nil {
+			return err
 		}
 		buf, err := json.Marshal(threads)
 		if err != nil {
@@ -345,6 +354,9 @@ func closeDB() {
 }
 
 func resetOptimalThreads() error {
+	if db == nil {
+		return fmt.Errorf("banco de dados nao inicializado")
+	}
 	err := db.Update(func(tx *bbolt.Tx) error {
 		err := tx.DeleteBucket([]byte("DiskConfig"))
 		if err != nil && err != bbolt.ErrBucketNotFound {
