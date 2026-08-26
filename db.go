@@ -43,8 +43,16 @@ func initDB() error {
 	})
 }
 
-// searchFilenamesInDB realiza busca apenas pelos nomes no banco de dados com suporte a filtros positivos e negativos
-func searchFilenamesInDB(terms []string, posFilter []string, negFilter []string) []Match {
+// searchFilenamesInDB realiza busca apenas pelos nomes no banco de dados com suporte a filtros positivos e negativos e modo amplo/exato
+func searchFilenamesInDB(terms []string, posFilter []string, negFilter []string, mode string) []Match {
+	if mode == "" {
+		mode = getMatchingMode()
+	}
+
+	normTerms := NormalizeTerms(terms, mode)
+	normPosFilter := NormalizeTerms(posFilter, mode)
+	normNegFilter := NormalizeTerms(negFilter, mode)
+
 	var matches []Match
 	_ = db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte("Files"))
@@ -54,20 +62,20 @@ func searchFilenamesInDB(terms []string, posFilter []string, negFilter []string)
 
 		return b.ForEach(func(k, v []byte) error {
 			path := string(k)
-			pathLower := strings.ToLower(path)
+			normPath := NormalizeText(path, mode)
 
 			// Verifica Filtro Negativo
-			for _, neg := range negFilter {
-				if strings.Contains(pathLower, neg) {
+			for _, neg := range normNegFilter {
+				if strings.Contains(normPath, neg) {
 					return nil
 				}
 			}
 
 			// Verifica Filtro Positivo
-			if len(posFilter) > 0 {
+			if len(normPosFilter) > 0 {
 				matched := false
-				for _, pos := range posFilter {
-					if strings.Contains(pathLower, pos) {
+				for _, pos := range normPosFilter {
+					if strings.Contains(normPath, pos) {
 						matched = true
 						break
 					}
@@ -78,8 +86,8 @@ func searchFilenamesInDB(terms []string, posFilter []string, negFilter []string)
 			}
 
 			// Verifica Termos de Busca
-			for _, term := range terms {
-				if strings.Contains(pathLower, strings.ToLower(term)) {
+			for _, term := range normTerms {
+				if strings.Contains(normPath, term) {
 					var size int64
 					var modTime time.Time
 					var meta FileMeta
@@ -102,6 +110,53 @@ func searchFilenamesInDB(terms []string, posFilter []string, negFilter []string)
 		})
 	})
 	return matches
+}
+
+func getMatchingMode() string {
+	defaultMode := "ampla"
+	if db == nil {
+		return defaultMode
+	}
+	var mode string = defaultMode
+	_ = db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("AppConfig"))
+		if b == nil {
+			return nil
+		}
+		v := b.Get([]byte("matching_mode"))
+		if v != nil {
+			var val string
+			if err := json.Unmarshal(v, &val); err == nil && val != "" {
+				valLower := strings.ToLower(strings.TrimSpace(val))
+				if valLower == "ampla" || valLower == "exata" {
+					mode = valLower
+				}
+			}
+		}
+		return nil
+	})
+	return mode
+}
+
+func saveMatchingMode(mode string) error {
+	if db == nil {
+		return fmt.Errorf("banco de dados nao inicializado")
+	}
+	modeLower := strings.ToLower(strings.TrimSpace(mode))
+	if modeLower != "ampla" && modeLower != "exata" {
+		return fmt.Errorf("modo invalido: %s (opcoes validas: 'ampla', 'exata')", mode)
+	}
+	return db.Update(func(tx *bbolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte("AppConfig"))
+		if err != nil {
+			return err
+		}
+		buf, err := json.Marshal(modeLower)
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte("matching_mode"), buf)
+	})
 }
 
 func getMaxSearchHistory() int {

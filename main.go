@@ -121,6 +121,12 @@ type SearchConfig struct {
 	TargetType     TargetType
 	SortMode       SortMode
 	ReportFormat   string
+	MatchingMode   string
+
+	// Campos pré-normalizados para alta performance
+	normTerms     []string
+	normPosFilter []string
+	normNegFilter []string
 }
 
 type SearchResult struct {
@@ -135,30 +141,14 @@ type interval struct {
 }
 
 // highlightTerms destaca em vermelho negrito os termos buscados no texto
-func highlightTerms(text string, terms []string) string {
-	if len(terms) == 0 {
+func highlightTerms(text string, terms []string, mode string) string {
+	if len(terms) == 0 || text == "" {
 		return text
 	}
-	var intervals []interval
-	lowerText := strings.ToLower(text)
-	for _, term := range terms {
-		termLower := strings.ToLower(term)
-		if termLower == "" {
-			continue
-		}
-		pos := 0
-		for {
-			idx := strings.Index(lowerText[pos:], termLower)
-			if idx == -1 {
-				break
-			}
-			start := pos + idx
-			end := start + len(termLower)
-			intervals = append(intervals, interval{start: start, end: end})
-			pos = start + len(termLower)
-		}
+	if mode == "" {
+		mode = "ampla"
 	}
-
+	intervals := FindMatchIntervals(text, terms, mode)
 	if len(intervals) == 0 {
 		return text
 	}
@@ -192,13 +182,18 @@ func highlightTerms(text string, terms []string) string {
 	var sb strings.Builder
 	lastIdx := 0
 	for _, inter := range merged {
+		if inter.start > len(text) || inter.end > len(text) || inter.start > inter.end {
+			continue
+		}
 		sb.WriteString(text[lastIdx:inter.start])
 		sb.WriteString("\033[1;31m") // Bold Red
 		sb.WriteString(text[inter.start:inter.end])
 		sb.WriteString("\033[0m")
 		lastIdx = inter.end
 	}
-	sb.WriteString(text[lastIdx:])
+	if lastIdx < len(text) {
+		sb.WriteString(text[lastIdx:])
+	}
 	return sb.String()
 }
 
@@ -522,6 +517,7 @@ func realizarBusca(reader *bufio.Reader) bool {
 	fmt.Println()
 	fmt.Println(Bold + ThemeYellow + "Iniciando busca no disco e atualizando banco assincronamente..." + Reset)
 
+	matchingMode := getMatchingMode()
 	start := time.Now()
 	config := SearchConfig{
 		BaseDir:        baseDir,
@@ -532,6 +528,7 @@ func realizarBusca(reader *bufio.Reader) bool {
 		TargetType:     targetType,
 		SortMode:       sortMode,
 		ReportFormat:   reportFormat,
+		MatchingMode:   matchingMode,
 	}
 
 	result, err := runSearch(config)
@@ -566,10 +563,11 @@ func realizarBuscaRapida(reader *bufio.Reader) bool {
 
 	sortMode := promptSortMode(reader)
 	reportFormat := promptReportFormat(reader)
+	matchingMode := getMatchingMode()
 
 	fmt.Println(Bold + ThemeYellow + "Buscando no banco de dados..." + Reset)
 	start := time.Now()
-	matches := searchFilenamesInDB(terms, posFilter, negFilter)
+	matches := searchFilenamesInDB(terms, posFilter, negFilter, matchingMode)
 
 	if targetType == TargetDirectories {
 		matches = convertToUniqueDirectoryMatches(matches)
@@ -594,6 +592,7 @@ func realizarBuscaRapida(reader *bufio.Reader) bool {
 			Mode:           ModeName,
 			SortMode:       sortMode,
 			ReportFormat:   reportFormat,
+			MatchingMode:   matchingMode,
 		}
 		reporter, _ := createReport(config)
 		if reporter != nil {
@@ -1120,15 +1119,24 @@ func realizarConfiguracoes(reader *bufio.Reader) {
 	for {
 		currentLimit := getMaxSearchHistory()
 		currentFormat := getReportFormat()
+		currentMatchingMode := getMatchingMode()
+
+		modeDesc := "Ampla (ignora acentos e maiusculas) [padrao]"
+		if currentMatchingMode == "exata" {
+			modeDesc = "Exata (busca literal/sensivel)"
+		}
+
 		fmt.Println()
 		fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
 		fmt.Println(Bold + " Configuracoes" + Reset)
 		fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
 		fmt.Printf(" Limite atual de relatorios na pasta /resultados_busca: %s%d%s\n", Bold+ThemeGreen, currentLimit, Reset)
-		fmt.Printf(" Formato padrao do relatorio: %s%s%s\n\n", Bold+ThemeGreen, strings.ToUpper(currentFormat), Reset)
+		fmt.Printf(" Formato padrao do relatorio: %s%s%s\n", Bold+ThemeGreen, strings.ToUpper(currentFormat), Reset)
+		fmt.Printf(" Modo de busca (correspondencia): %s%s%s\n\n", Bold+ThemeGreen, modeDesc, Reset)
 		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Alterar limite de arquivos de historico\n")
 		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Alterar formato do relatorio (csv, json, toml)\n")
-		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Voltar ao menu principal\n")
+		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Alterar modo de busca (ampla / exata)\n")
+		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Voltar ao menu principal\n")
 		fmt.Println(Bold + ThemeCyan + "--------------------------------------------------" + Reset)
 
 		opcao := prompt(reader, Bold+"Escolha uma opcao: "+Reset)
@@ -1154,11 +1162,45 @@ func realizarConfiguracoes(reader *bufio.Reader) {
 			newFmt := promptReportFormat(reader)
 			fmt.Printf(ThemeGreen+"Formato do relatorio salvo como %s com sucesso!\n"+Reset, strings.ToUpper(newFmt))
 		case "3":
+			newMode := promptMatchingMode(reader)
+			modeLabel := "Ampla (ignora acentos e maiusculas)"
+			if newMode == "exata" {
+				modeLabel = "Exata"
+			}
+			fmt.Printf(ThemeGreen+"Modo de busca alterado para '%s' com sucesso!\n"+Reset, modeLabel)
+		case "4":
 			return
 		default:
 			fmt.Println(Red + "Opcao invalida. Tente novamente." + Reset)
 		}
 	}
+}
+
+func promptMatchingMode(reader *bufio.Reader) string {
+	currentMode := getMatchingMode()
+	fmt.Println()
+	fmt.Println(Bold + "Modo de correspondencia da busca:" + Reset)
+	fmt.Printf("  1 - Ampla (ignora acentos e maiusculas/minusculas) %s\n", formatSuffix("ampla", currentMode))
+	fmt.Printf("  2 - Exata (busca literal/sensivel) %s\n", formatSuffix("exata", currentMode))
+
+	opcao := prompt(reader, fmt.Sprintf(Bold+"Escolha uma opcao (1-2 ou Enter para '%s'): "+Reset, currentMode))
+	opcao = strings.TrimSpace(strings.ToLower(opcao))
+
+	selected := currentMode
+	switch opcao {
+	case "1", "ampla", "amplo":
+		selected = "ampla"
+	case "2", "exata", "exato":
+		selected = "exata"
+	case "":
+		selected = currentMode
+	default:
+		fmt.Printf(Yellow+"Opcao invalida. Mantendo modo '%s'.\n"+Reset, currentMode)
+		selected = currentMode
+	}
+
+	_ = saveMatchingMode(selected)
+	return selected
 }
 
 func promptReportFormat(reader *bufio.Reader) string {
@@ -1283,6 +1325,15 @@ func sortMatches(matches []Match, mode SortMode) {
 
 
 func runSearch(config SearchConfig) (SearchResult, error) {
+	if config.MatchingMode == "" {
+		config.MatchingMode = getMatchingMode()
+	}
+
+	// Pré-normaliza termos e filtros uma única vez antes de iniciar os workers
+	config.normTerms = NormalizeTerms(config.Terms, config.MatchingMode)
+	config.normPosFilter = NormalizeTerms(config.PositiveFilter, config.MatchingMode)
+	config.normNegFilter = NormalizeTerms(config.NegativeFilter, config.MatchingMode)
+
 	workerCount := calculateWorkerCount(config.Mode)
 	jobs := make(chan string, workerCount*4)
 	results := make(chan []Match, workerCount)
@@ -1364,10 +1415,10 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 					}
 				}
 				if len(dirBatch) > 0 {
-					showFound(dirBatch, config.Terms)
+					showFound(dirBatch, config.Terms, config.MatchingMode)
 				}
 			} else {
-				showFound(batch, config.Terms)
+				showFound(batch, config.Terms, config.MatchingMode)
 			}
 		}
 	}()
@@ -1377,7 +1428,7 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 		go func() {
 			defer workers.Done()
 			for path := range jobs {
-				fileMatches, err := processFile(path, config.Mode, config.Terms, searchIndexChan)
+				fileMatches, err := processFile(path, config.Mode, config.normTerms, config.MatchingMode, searchIndexChan)
 				if err != nil {
 					errorsCh <- fmt.Sprintf("Falha ao ler arquivo %s: %v", path, err)
 					continue
@@ -1449,20 +1500,20 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 }
 
 func shouldProcessFile(path string, config SearchConfig) bool {
-	pathLower := strings.ToLower(path)
+	normPath := NormalizeText(path, config.MatchingMode)
 
 	// Filtro Negativo: se contiver qualquer termo negativo, ignora
-	for _, neg := range config.NegativeFilter {
-		if strings.Contains(pathLower, neg) {
+	for _, neg := range config.normNegFilter {
+		if strings.Contains(normPath, neg) {
 			return false
 		}
 	}
 
 	// Filtro Positivo: se houver termos positivos, deve conter pelo menos um
-	if len(config.PositiveFilter) > 0 {
+	if len(config.normPosFilter) > 0 {
 		matched := false
-		for _, pos := range config.PositiveFilter {
-			if strings.Contains(pathLower, pos) {
+		for _, pos := range config.normPosFilter {
+			if strings.Contains(normPath, pos) {
 				matched = true
 				break
 			}
@@ -1523,7 +1574,7 @@ func cleanOldSearchHistory(reportDir string) {
 	}
 }
 
-func processFile(path string, mode SearchMode, terms []string, indexChan chan<- FileMeta) ([]Match, error) {
+func processFile(path string, mode SearchMode, normTerms []string, matchingMode string, indexChan chan<- FileMeta) ([]Match, error) {
 	var matches []Match
 
 	info, err := os.Stat(path)
@@ -1540,12 +1591,12 @@ func processFile(path string, mode SearchMode, terms []string, indexChan chan<- 
 	}
 
 	if mode == ModeName || mode == ModeBoth {
-		nameMatches := searchInFileName(path, terms)
+		nameMatches := searchInFileName(path, normTerms, matchingMode)
 		matches = append(matches, nameMatches...)
 	}
 
 	if mode == ModeContent || mode == ModeBoth {
-		contentMatches, err := searchInFile(path, terms)
+		contentMatches, err := searchInFile(path, normTerms, matchingMode)
 		if err != nil {
 			return matches, err
 		}
@@ -1555,15 +1606,15 @@ func processFile(path string, mode SearchMode, terms []string, indexChan chan<- 
 	return matches, nil
 }
 
-func searchInFileName(path string, terms []string) []Match {
-	fileName := strings.ToLower(filepath.Base(path))
+func searchInFileName(path string, normTerms []string, mode string) []Match {
+	normName := NormalizeText(filepath.Base(path), mode)
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		absPath = path
 	}
 
-	for _, term := range terms {
-		if strings.Contains(fileName, strings.ToLower(term)) {
+	for _, term := range normTerms {
+		if strings.Contains(normName, term) {
 			var size int64
 			var modTime time.Time
 			if info, err := os.Stat(absPath); err == nil {
@@ -1582,7 +1633,7 @@ func searchInFileName(path string, terms []string) []Match {
 	return nil
 }
 
-func searchInFile(path string, terms []string) ([]Match, error) {
+func searchInFile(path string, normTerms []string, mode string) ([]Match, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -1609,10 +1660,10 @@ func searchInFile(path string, terms []string) ([]Match, error) {
 	for scanner.Scan() {
 		lineNumber++
 		line := scanner.Text()
-		lowerLine := strings.ToLower(line)
+		normLine := NormalizeText(line, mode)
 
-		for _, term := range terms {
-			if strings.Contains(lowerLine, strings.ToLower(term)) {
+		for _, term := range normTerms {
+			if strings.Contains(normLine, term) {
 				matches = append(matches, Match{
 					Path:    absPath,
 					Kind:    "conteudo",
@@ -1693,6 +1744,7 @@ func createReport(config SearchConfig) (*ReportWriter, error) {
 		fmt.Fprintf(writer, "data_inicio = %q\n", time.Now().Format("2006-01-02 15:04:05.000"))
 		fmt.Fprintf(writer, "pasta_base = %q\n", config.BaseDir)
 		fmt.Fprintf(writer, "modo = %q\n", modeLabel(config.Mode))
+		fmt.Fprintf(writer, "modo_busca = %q\n", config.MatchingMode)
 		fmt.Fprintf(writer, "alvo = %q\n", targetLabel(config.TargetType))
 		fmt.Fprintf(writer, "termos = [%s]\n", formatTOMLStringList(config.Terms))
 
@@ -1714,6 +1766,7 @@ func createReport(config SearchConfig) (*ReportWriter, error) {
 		fmt.Fprintf(writer, "# Data Inicio: %s\n", time.Now().Format("2006-01-02 15:04:05.000"))
 		fmt.Fprintf(writer, "# Pasta Base: %s\n", config.BaseDir)
 		fmt.Fprintf(writer, "# Modo: %s\n", modeLabel(config.Mode))
+		fmt.Fprintf(writer, "# Modo Busca: %s\n", config.MatchingMode)
 		fmt.Fprintf(writer, "# Alvo: %s\n", targetLabel(config.TargetType))
 		fmt.Fprintf(writer, "# Termos: %s\n", strings.Join(config.Terms, ", "))
 
@@ -1836,6 +1889,7 @@ type ReportMetadataJSON struct {
 	DataInicio       string   `json:"data_inicio"`
 	PastaBase        string   `json:"pasta_base"`
 	Modo             string   `json:"modo"`
+	ModoBusca        string   `json:"modo_busca"`
 	Alvo             string   `json:"alvo"`
 	Termos           []string `json:"termos"`
 	FiltrosPositivos any      `json:"filtros_positivos"`
@@ -1871,6 +1925,7 @@ func (r *ReportWriter) writeJSON() error {
 		DataInicio:       time.Now().Format("2006-01-02 15:04:05.000"),
 		PastaBase:        r.Config.BaseDir,
 		Modo:             modeLabel(r.Config.Mode),
+		ModoBusca:        r.Config.MatchingMode,
 		Alvo:             targetLabel(r.Config.TargetType),
 		Termos:           r.Config.Terms,
 		FiltrosPositivos: posFilter,
@@ -1945,14 +2000,14 @@ func (r *ReportWriter) Close() error {
 	return r.File.Close()
 }
 
-func formatMatch(match Match, terms []string) string {
-	highlightedPath := highlightTerms(match.Path, terms)
+func formatMatch(match Match, terms []string, mode string) string {
+	highlightedPath := highlightTerms(match.Path, terms, mode)
 	if strings.HasPrefix(match.Kind, "diretorio") {
 		return fmt.Sprintf("%sPasta:%s %s | %s[Diretorio]%s", ThemeCyan, Reset, highlightedPath, Bold+ThemeGreen, Reset)
 	}
 	line := fmt.Sprintf("%sArquivo:%s %s", ThemeCyan, Reset, highlightedPath)
 	if match.Kind == "conteudo" {
-		highlightedText := highlightTerms(match.Text, terms)
+		highlightedText := highlightTerms(match.Text, terms, mode)
 		return fmt.Sprintf("%s | %sLinha:%s %d | %sTrecho:%s %s", line, ThemeYellow, Reset, match.Line, ThemeYellow, Reset, highlightedText)
 	}
 	return fmt.Sprintf("%s | %s[Correspondencia no nome]%s", line, Bold+ThemeGreen, Reset)
@@ -1980,9 +2035,9 @@ func extensionList(filter map[string]struct{}) []string {
 	return list
 }
 
-func showFound(batch []Match, terms []string) {
+func showFound(batch []Match, terms []string, mode string) {
 	for _, match := range batch {
-		fmt.Printf("\n%sEncontrado:%s %s\n", Bold+ThemeGreen, Reset, formatMatch(match, terms))
+		fmt.Printf("\n%sEncontrado:%s %s\n", Bold+ThemeGreen, Reset, formatMatch(match, terms, mode))
 	}
 }
 
