@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -167,6 +168,33 @@ func TestSearchInFileNormalized(t *testing.T) {
 	if len(matchesExata) != 0 {
 		t.Fatalf("Modo exata não deveria encontrar 'vitoria' em 'Vitória', obteve %d", len(matchesExata))
 	}
+}
+
+func TestNormalizeTextConcurrent(t *testing.T) {
+	var wg sync.WaitGroup
+	inputs := []string{
+		"Vitória Lopes",
+		"São Paulo - Relatório Financeiro",
+		"Ação e Reação em Acentuação",
+		"Parâmetro de Configuração",
+		"coração e emoção",
+		"relatório_2026.pdf",
+	}
+
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				str := inputs[(id+j)%len(inputs)]
+				norm := NormalizeText(str, "ampla")
+				if strings.ContainsAny(norm, "áéíóúãõâêîôûçÁÉÍÓÚÃÕÂÊÎÔÛÇ") {
+					t.Errorf("Caracter acentuado encontrado em texto normalizado: %s", norm)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
 }
 
 func TestHighlightTermsNormalized(t *testing.T) {

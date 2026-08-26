@@ -13,8 +13,12 @@ import (
 )
 
 var (
-	// Transformer reutilizável para remoção de diacríticos Unicode (classe Mn)
-	tRemoveMn = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+	// Pool de transformadores para garantir concorrência segura (transform.Transformer possui estado interno e NÃO é thread-safe)
+	transformerPool = sync.Pool{
+		New: func() any {
+			return transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+		},
+	}
 
 	// Pool de buffers para evitar alocações excessivas durante varreduras em larga escala
 	bufferPool = sync.Pool{
@@ -59,11 +63,15 @@ func normalizeUnicode(s string) string {
 	// Primeiro converte para minúsculas
 	lower := strings.ToLower(s)
 
+	t := transformerPool.Get().(transform.Transformer)
+	t.Reset()
+	defer transformerPool.Put(t)
+
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
 
-	wr := transform.NewWriter(buf, tRemoveMn)
+	wr := transform.NewWriter(buf, t)
 	_, _ = wr.Write([]byte(lower))
 	_ = wr.Close()
 

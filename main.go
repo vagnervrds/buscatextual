@@ -1548,19 +1548,26 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 			}()
 
 			for path := range jobs {
-				fileMatches, err := processFile(path, config.Mode, config.normTerms, config.MatchingMode, searchIndexChan)
-				if err != nil {
-					LogError(fmt.Sprintf("Falha ao processar arquivo %s", path), err)
-					errMu.Lock()
-					if len(errMessages) < 50 {
-						errMessages = append(errMessages, fmt.Sprintf("Falha ao ler arquivo %s: %v", path, err))
+				func(p string) {
+					defer func() {
+						if r := recover(); r != nil {
+							LogRecover(r)
+						}
+					}()
+					fileMatches, err := processFile(p, config.Mode, config.normTerms, config.MatchingMode, searchIndexChan)
+					if err != nil {
+						LogError(fmt.Sprintf("Falha ao processar arquivo %s", p), err)
+						errMu.Lock()
+						if len(errMessages) < 50 {
+							errMessages = append(errMessages, fmt.Sprintf("Falha ao ler arquivo %s: %v", p, err))
+						}
+						errMu.Unlock()
+						return
 					}
-					errMu.Unlock()
-					continue
-				}
-				if len(fileMatches) > 0 {
-					results <- fileMatches
-				}
+					if len(fileMatches) > 0 {
+						results <- fileMatches
+					}
+				}(path)
 			}
 		}()
 	}
