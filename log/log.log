@@ -1,0 +1,106 @@
+================================================================================
+[2026-08-26 10:37:59.279] [ERROR] Erro ao percorrer caminho durante busca: D:\$RECYCLE.BIN\S-1-5-21-2413445283-3167299404-443891798-1001
+Detalhes do Erro: open D:\$RECYCLE.BIN\S-1-5-21-2413445283-3167299404-443891798-1001: Acesso negado.
+Stack Trace Completo:
+goroutine 1 [running]:
+runtime/debug.Stack()
+	C:/Program Files/Go/src/runtime/debug/stack.go:26 +0x5e
+main.LogError({0x3a0f75f8c310, 0x66}, {0x7ff759862a00, 0x3a0f76280270})
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/logger.go:91 +0x49
+main.runSearch.func4({0x3a0f763c0100, 0x3d}, {0x7ff7598656c8?, 0x3a0f761ec1c0?}, {0x7ff759862a00, 0x3a0f76280270})
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:1580 +0xe5
+path/filepath.walkDir({0x3a0f763c0100, 0x3d}, {0x7ff7598656c8, 0x3a0f761ec1c0}, 0x3a0f76687888)
+	C:/Program Files/Go/src/path/filepath/path.go:322 +0x14c
+path/filepath.walkDir({0x3a0f7600e760, 0xf}, {0x7ff7598656c8, 0x3a0f760249a0}, 0x3a0f76687888)
+	C:/Program Files/Go/src/path/filepath/path.go:333 +0x26f
+path/filepath.walkDir({0x3a0f75f7a450, 0x3}, {0x7ff759865700, 0x3a0f7601e0c0}, 0x3a0f76687888)
+	C:/Program Files/Go/src/path/filepath/path.go:333 +0x26f
+path/filepath.WalkDir({0x3a0f75f7a450, 0x3}, 0x3a0f760a5888)
+	C:/Program Files/Go/src/path/filepath/path.go:401 +0x75
+main.runSearch({{0x3a0f75f7a450, 0x3}, 0x1, {0x3a0f76104010, 0x1, 0x1}, {0x0, 0x0, 0x0}, {0x0, ...}, ...})
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:1578 +0x7a8
+main.realizarBusca(0x3a0f76687ec8)
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:562 +0x3a5
+main.main()
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:252 +0x6a5
+================================================================================
+
+================================================================================
+[2026-08-26 10:37:59.280] [ERROR] Erro ao percorrer caminho durante busca: D:\$RECYCLE.BIN\S-1-5-21-3112100218-1649152096-3233682266-1000
+Detalhes do Erro: open D:\$RECYCLE.BIN\S-1-5-21-3112100218-1649152096-3233682266-1000: Acesso negado.
+Stack Trace Completo:
+goroutine 1 [running]:
+runtime/debug.Stack()
+	C:/Program Files/Go/src/runtime/debug/stack.go:26 +0x5e
+main.LogError({0x3a0f75f8c3f0, 0x67}, {0x7ff759862a00, 0x3a0f762802a0})
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/logger.go:91 +0x49
+main.runSearch.func4({0x3a0f763c0140, 0x3e}, {0x7ff7598656c8?, 0x3a0f761ec230?}, {0x7ff759862a00, 0x3a0f762802a0})
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:1580 +0xe5
+path/filepath.walkDir({0x3a0f763c0140, 0x3e}, {0x7ff7598656c8, 0x3a0f761ec230}, 0x3a0f76687888)
+	C:/Program Files/Go/src/path/filepath/path.go:322 +0x14c
+path/filepath.walkDir({0x3a0f7600e760, 0xf}, {0x7ff7598656c8, 0x3a0f760249a0}, 0x3a0f76687888)
+	C:/Program Files/Go/src/path/filepath/path.go:333 +0x26f
+path/filepath.walkDir({0x3a0f75f7a450, 0x3}, {0x7ff759865700, 0x3a0f7601e0c0}, 0x3a0f76687888)
+	C:/Program Files/Go/src/path/filepath/path.go:333 +0x26f
+path/filepath.WalkDir({0x3a0f75f7a450, 0x3}, 0x3a0f760a5888)
+	C:/Program Files/Go/src/path/filepath/path.go:401 +0x75
+main.runSearch({{0x3a0f75f7a450, 0x3}, 0x1, {0x3a0f76104010, 0x1, 0x1}, {0x0, 0x0, 0x0}, {0x0, ...}, ...})
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:1578 +0x7a8
+main.realizarBusca(0x3a0f76687ec8)
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:562 +0x3a5
+main.main()
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:252 +0x6a5
+================================================================================
+
+================================================================================
+[2026-08-26 10:37:59.281] [ERROR] Erro ao percorrer caminho durante busca: D:\$RECYCLE.BIN\S-1-5-21-3112100218-1649152096-3233682266-1001
+Detalhes do Erro: open D:\$RECYCLE.BIN\S-1-5-21-3112100218-1649152096-3233682266-1001: Acesso negado.
+Stack Trace Completo:
+goroutine 1 [running]:
+runtime/debug.Stack()
+	C:/Program Files/Go/src/runtime/debug/stack.go:26 +0x5e
+main.LogError({0x3a0f75f8c4d0, 0x67}, {0x7ff759862a00, 0x3a0f762802d0})
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/logger.go:91 +0x49
+main.runSearch.func4({0x3a0f763c0180, 0x3e}, {0x7ff7598656c8?, 0x3a0f761ec2a0?}, {0x7ff759862a00, 0x3a0f762802d0})
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:1580 +0xe5
+path/filepath.walkDir({0x3a0f763c0180, 0x3e}, {0x7ff7598656c8, 0x3a0f761ec2a0}, 0x3a0f76687888)
+	C:/Program Files/Go/src/path/filepath/path.go:322 +0x14c
+path/filepath.walkDir({0x3a0f7600e760, 0xf}, {0x7ff7598656c8, 0x3a0f760249a0}, 0x3a0f76687888)
+	C:/Program Files/Go/src/path/filepath/path.go:333 +0x26f
+path/filepath.walkDir({0x3a0f75f7a450, 0x3}, {0x7ff759865700, 0x3a0f7601e0c0}, 0x3a0f76687888)
+	C:/Program Files/Go/src/path/filepath/path.go:333 +0x26f
+path/filepath.WalkDir({0x3a0f75f7a450, 0x3}, 0x3a0f760a5888)
+	C:/Program Files/Go/src/path/filepath/path.go:401 +0x75
+main.runSearch({{0x3a0f75f7a450, 0x3}, 0x1, {0x3a0f76104010, 0x1, 0x1}, {0x0, 0x0, 0x0}, {0x0, ...}, ...})
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:1578 +0x7a8
+main.realizarBusca(0x3a0f76687ec8)
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:562 +0x3a5
+main.main()
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:252 +0x6a5
+================================================================================
+
+================================================================================
+[2026-08-26 10:38:02.430] [ERROR] Erro ao percorrer caminho durante busca: D:\Config.Msi
+Detalhes do Erro: open D:\Config.Msi: Acesso negado.
+Stack Trace Completo:
+goroutine 1 [running]:
+runtime/debug.Stack()
+	C:/Program Files/Go/src/runtime/debug/stack.go:26 +0x5e
+main.LogError({0x3a0f761f6000, 0x36}, {0x7ff759862a00, 0x3a0f76612090})
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/logger.go:91 +0x49
+main.runSearch.func4({0x3a0f76333860, 0xd}, {0x7ff7598656c8?, 0x3a0f76024f50?}, {0x7ff759862a00, 0x3a0f76612090})
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:1580 +0xe5
+path/filepath.walkDir({0x3a0f76333860, 0xd}, {0x7ff7598656c8, 0x3a0f76024f50}, 0x3a0f76687888)
+	C:/Program Files/Go/src/path/filepath/path.go:322 +0x14c
+path/filepath.walkDir({0x3a0f75f7a450, 0x3}, {0x7ff759865700, 0x3a0f7601e0c0}, 0x3a0f76687888)
+	C:/Program Files/Go/src/path/filepath/path.go:333 +0x26f
+path/filepath.WalkDir({0x3a0f75f7a450, 0x3}, 0x3a0f760a5888)
+	C:/Program Files/Go/src/path/filepath/path.go:401 +0x75
+main.runSearch({{0x3a0f75f7a450, 0x3}, 0x1, {0x3a0f76104010, 0x1, 0x1}, {0x0, 0x0, 0x0}, {0x0, ...}, ...})
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:1578 +0x7a8
+main.realizarBusca(0x3a0f76687ec8)
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:562 +0x3a5
+main.main()
+	D:/Users/Admin/PycharmProjects/pythonProject/buscatextual/main.go:252 +0x6a5
+================================================================================
+
