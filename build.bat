@@ -24,10 +24,10 @@ echo Gerando buscatextual.exe...
 go build -ldflags "-X main.BuildVersion=%BUILD_NUM%" -o buscatextual.exe .
 if errorlevel 1 (
     echo Falha ao gerar o executavel.
-    pause
+    if "%NO_PAUSE%"=="" pause
     exit /b 1
 )
 
 echo Executavel criado em "%ROOT%buscatextual.exe"
-pause
-endlocal
+if "%NO_PAUSE%"=="" pause
+endlocal & set "BUILD_NUM=%BUILD_NUM%"
