@@ -463,6 +463,7 @@ func realizarChecagemAtualizacao(reader *bufio.Reader) {
 	}
 
 	fmt.Printf(" Versao/Build no GitHub: %s%d%s\n", Bold+ThemeCyan, remoteBuild, Reset)
+	fmt.Printf(" URL do Executavel (.exe): %shttps://raw.githubusercontent.com/vagnervrds/buscatextual/master/buscatextual.exe%s\n", ThemeCyan, Reset)
 
 	if hasUpdate {
 		fmt.Println(Bold + ThemeYellow + "\n[!] Nova versao disponivel!" + Reset)
