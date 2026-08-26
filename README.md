@@ -1,77 +1,78 @@
 # BuscaTextual
 
-CLI em Go para encontrar arquivos por nome, por conteudo, ou pelos dois modos ao mesmo tempo.
+O **BuscaTextual** é uma ferramenta de linha de comando (CLI) desenvolvida em Go cujo objetivo primário é proporcionar uma **busca por arquivos de forma extremamente rápida**, resultado que temos alcançado com excelência tanto em SSDs quanto em HDDs mecânicos de alta capacidade.
 
-Foi feito para resolver um problema simples de forma direta: informar uma pasta, escolher como buscar, filtrar por extensao se quiser, e gerar um relatorio auditavel com os resultados.
+Permite encontrar arquivos por nome, por conteúdo ou por ambos os modos simultaneamente, com filtros inteligentes, paralelismo adaptativo e geração de relatórios auditáveis.
 
 ## Ideia do projeto
 
-Este projeto e uma ideia simples para resolver um problema simples:
+O projeto foi concebido para resolver a necessidade de localizar arquivos e dados com rapidez máxima e simplicidade operacional:
 
-- buscar arquivos pelo nome
-- buscar ocorrencias dentro do conteudo
-- buscar recursivamente em subpastas
-- salvar relatórios em `.csv`, `.json` ou `.toml` (com `.csv` como padrão)
-- deixar o codigo aberto e facil de auditar
+- Buscar arquivos pelo nome de forma instantânea através de índice local.
+- Buscar ocorrências de texto dentro do conteúdo dos arquivos.
+- Buscar recursivamente em subpastas com concorrência otimizada.
+- Salvar relatórios estruturados em `.csv`, `.json` ou `.toml` (com `.csv` como padrão).
+- Manter o código 100% aberto, transparente e fácil de auditar.
 
-O projeto foi escrito em Go e esta pronto para uso.
+O projeto foi escrito em Go e está pronto para uso imediato.
 
 ## Liberdade de uso
 
-Este projeto e de uso 100% livre para:
+Este projeto é de uso 100% livre para:
 
-- uso pessoal
-- estudo
-- modificacao e derivacao
-- redistribuicao
-- uso comercial
+- Uso pessoal
+- Estudo
+- Modificação e derivação
+- Redistribuição
+- Uso comercial
 
-Em resumo: voce pode usar, estudar, modificar, vender, incorporar em outro projeto ou adaptar como quiser.
+Em resumo: você pode usar, estudar, modificar, vender, incorporar em outro projeto ou adaptar como quiser.
 
-Veja a licenca em [LICENSE](LICENSE).
+Veja a licença em [LICENSE](LICENSE).
 
 ## Desempenho e Performance
 
-Este projeto foi projetado com foco em velocidade máxima e eficiência de recursos:
-* **Busca e Indexação Ultrarrápidas**: O programa é capaz de entregar busca e indexação na casa de **1 a 3 segundos** mesmo em discos rígidos mecânicos de alta capacidade (testado com sucesso em **HD de 6TB**).
-* **Paralelismo Adaptativo**: A calibragem automática de threads avalia o tempo de leitura do hardware em tempo real para tirar o máximo proveito de SSDs rápidos e evitar travamentos por movimentação física da agulha de leitura (disk thrashing) em HDDs tradicionais.
+O projeto foi projetado com foco em velocidade máxima e eficiência no uso de recursos:
+
+* **Busca e Indexação Ultrarrápidas**: O programa entrega busca e indexação na casa de **1 a 3 segundos**, mesmo em discos rígidos mecânicos de alta capacidade (testado com sucesso em **HD de 6TB**).
+* **Paralelismo Adaptativo**: A calibragem automática de threads avalia a velocidade de resposta do hardware em tempo real para extrair o máximo de SSDs rápidos e evitar travamentos por movimentação excessiva da agulha de leitura (*disk thrashing*) em HDDs tradicionais.
 
 ## O que o programa faz
 
 * **Interface Colorida (ANSI)**: Possui menus estilizados e destaca os termos buscados em vermelho negrito no terminal (tanto no caminho do arquivo quanto no trecho correspondente).
-* **Busca Concorrente**: Realiza busca em disco usando múltiplos workers em paralelo para aproveitar a CPU sem sobrecarregar a leitura física.
-* **Banco de Dados Local (BoltDB)**: Indexa os caminhos e nomes de arquivos no banco `buscatextual.db` para buscas instantâneas de nomes sem ler o disco.
-* **Autotuning por Disco**: No primeiro crawler em uma unidade de disco (ex: `C:`, `D:`), o programa realiza um benchmark dinâmico (2, 4, 8 e 16 threads) para encontrar a concorrência ótima e salva o perfil no banco para indexações futuras.
-* **Gravação Otimizada**: Indexação em segundo plano e escrita no BoltDB em lotes periódicos de 5.000 arquivos, mantendo a RAM baixa e velocidade alta.
-* **Abertura Passo a Passo**: Após a busca, permite iterar e abrir as pastas dos resultados diretamente no Gerenciador de Arquivos pressionando `Enter` (ou sair digitando `q`).
-* **Relatórios Estruturados**: Salva relatórios detalhados contendo dados de metadados e resultados estruturados nos formatos **CSV**, **JSON** ou **TOML** (com a preferência do usuário salva no banco de dados e **CSV** definido como padrão).
+* **Busca Concorrente**: Realiza busca em disco usando múltiplos workers em paralelo para aproveitar o poder da CPU sem sobrecarregar a leitura física.
+* **Banco de Dados Local (BoltDB)**: Indexa os caminhos e nomes de arquivos no banco local `buscatextual.db` para buscas instantâneas por nome, sem necessidade de reler todo o disco.
+* **Autotuning por Disco**: Na primeira varredura em uma unidade de disco (ex.: `C:`, `D:`), o programa realiza um benchmark dinâmico (2, 4, 8 e 16 threads) para determinar a concorrência ideal e salva o perfil para indexações futuras.
+* **Gravação Otimizada**: Indexação em segundo plano com escrita no BoltDB em lotes periódicos de 5.000 arquivos, garantindo baixo consumo de memória RAM e alta velocidade.
+* **Navegação Passo a Passo**: Após a exibição dos resultados, permite abrir diretamente a pasta de cada item no Gerenciador de Arquivos pressionando `Enter` (ou sair pressionando `q`).
+* **Relatórios Estruturados**: Salva relatórios detalhados com metadados da busca e ocorrências encontradas nos formatos **CSV**, **JSON** ou **TOML** (com a preferência salva no banco de dados e **CSV** definido como padrão).
 
-## Arquivos incluidos no repositorio
+## Arquivos incluídos no repositório
 
-Este repositorio inclui:
+Este repositório inclui:
 
-- codigo-fonte em Go
-- `build.bat` para gerar o executavel no Windows
-- `buscatextual.exe` pronto para baixar e usar
+- Código-fonte em Go.
+- `build.bat` para compilar o executável no Windows com facilidade.
+- `buscatextual.exe` pronto para baixar e executar.
 
-Assim, quem baixar do GitHub pode:
+Assim, você pode escolher:
 
-- usar o `.exe` direto
-- ou compilar a partir do codigo
+- Usar o executável pré-compilado `.exe` diretamente.
+- Ou compilar a partir do código-fonte.
 
 ## Como usar
 
 Você tem duas opções principais:
 
-1. **Baixar e usar direto:** Baixe o arquivo `buscatextual.exe` disponível na raiz deste repositório e execute-o com dois cliques. Nenhuma instalação é necessária.
-2. **Compilar localmente:** Baixe o código fonte (ou faça o clone do repositório) e compile o executável você mesmo, garantindo total transparência do código que está rodando.
+1. **Baixar e usar diretamente:** Baixe o arquivo `buscatextual.exe` disponível na raiz deste repositório e execute-o. Nenhuma instalação adicional é necessária.
+2. **Compilar localmente:** Obtenha o código-fonte (via download ou `git clone`) e compile o executável você mesmo, garantindo total transparência sobre o código em execução.
 
-O fluxo sera:
+O fluxo de uso é simples:
 
-1. informar a pasta para busca
-2. escolher o tipo de busca
-3. escolher se busca em todos os arquivos ou por extensoes
-4. informar os termos separados por `;`
+1. Informar a pasta base para a busca.
+2. Escolher o tipo de busca (Nome, Conteúdo ou Ambos).
+3. Definir se a busca será em todos os arquivos ou restrita a extensões específicas.
+4. Informar os termos de busca separados por `;`.
 
 Exemplo de termos:
 
@@ -79,7 +80,7 @@ Exemplo de termos:
 erro;cliente;pedido
 ```
 
-Exemplo de extensoes:
+Exemplo de extensões:
 
 ```text
 .txt;.log;.go
@@ -87,13 +88,13 @@ Exemplo de extensoes:
 
 ## Como compilar
 
-### Windows com batch
+### Windows via batch
 
 ```bat
 build.bat
 ```
 
-### Go direto
+### Go direto via terminal
 
 ```bash
 go build -o buscatextual.exe .
@@ -103,52 +104,52 @@ go build -o buscatextual.exe .
 
 - Go 1.22 ou superior
 
-## Exemplo de saida
+## Exemplo de saída
 
 ```text
-Encontrado: Arquivo: C:\dados\app.log | Linha: 120 | Trecho: erro de conexao
-Encontrado: Arquivo: C:\dados\cliente_abc.txt | Correspondencia no nome do arquivo
+Encontrado: Arquivo: C:\dados\app.log | Linha: 120 | Trecho: erro de conexão
+Encontrado: Arquivo: C:\dados\cliente_abc.txt | Correspondência no nome do arquivo
 ```
 
-## Relatorio gerado
+## Relatórios gerados
 
-Os relatórios ficam salvos em:
+Os relatórios são salvos na pasta:
 
 ```text
 resultados_busca/
 ```
 
-Nome de exemplo:
+Exemplo de nome de arquivo:
 
 ```text
-resultado_busca_20260423_101115_161.toml
+resultado_busca_20260423_101115_161.csv
 ```
 
-O relatório estruturado em formato **TOML** inclui:
+O relatório estruturado inclui:
 
-* Data e hora de início.
+* Data e hora de início da busca.
 * Pasta base da busca.
-* Modo de busca.
-* Termos de busca e filtros de extensão utilizados.
-* Lista de ocorrências com caminho do arquivo, tipo de correspondência (nome ou conteúdo), linha e o trecho de texto.
+* Modo de busca utilizado.
+* Termos pesquisados e filtros de extensão aplicados.
+* Lista detalhada de ocorrências contendo o caminho do arquivo, tipo de correspondência (nome ou conteúdo), linha e trecho encontrado.
 
-## Codigo auditavel
+## Código auditável
 
-O objetivo aqui nao e esconder logica nem criar complexidade desnecessaria.
+O objetivo do projeto não é esconder lógica nem criar complexidade desnecessária.
 
-O projeto foi mantido simples, direto e auditavel para que qualquer pessoa possa:
+A estrutura foi mantida simples, direta e auditável para que qualquer pessoa possa:
 
-- ler o codigo rapidamente
-- adaptar para seu proprio fluxo
-- validar o que esta sendo feito
-- recompilar sem dependencia pesada
+- Ler e compreender o código rapidamente.
+- Adaptar as rotinas para seu próprio fluxo de trabalho.
+- Validar o processamento de dados realizado.
+- Recompilar sem dependências externas pesadas.
 
-## Publicacao
+## Publicação
 
-Se este repositorio estiver no GitHub, o ideal e manter publicados:
+Neste repositório no GitHub, mantemos publicados:
 
-- codigo-fonte
-- `build.bat`
-- `buscatextual.exe`
+- O código-fonte completo.
+- O script de automação de compilação `build.bat`.
+- O executável `buscatextual.exe` pré-compilado.
 
-Isso facilita tanto para quem quer so usar quanto para quem quer estudar ou modificar.
+Isso facilita tanto para quem busca uma ferramenta pronta para uso imediato quanto para desenvolvedores que desejam estudar ou customizar a solução.
