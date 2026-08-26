@@ -199,6 +199,15 @@ func highlightTerms(text string, terms []string, mode string) string {
 }
 
 func main() {
+	_ = InitLogger("log")
+	defer CloseLogger()
+	defer func() {
+		if r := recover(); r != nil {
+			LogRecover(r)
+			panic(r)
+		}
+	}()
+
 	cleanupOldBinary()
 	initConsole()
 	reader := bufio.NewReader(os.Stdin)
@@ -210,6 +219,7 @@ func main() {
 		} else {
 			fmt.Printf(Red+"\nErro ao inicializar o banco de dados 'buscatextual.db': %v\n"+Reset, err)
 		}
+		LogError("Erro critico ao inicializar banco de dados 'buscatextual.db'", err)
 		fmt.Println("\nPressione Enter para fechar...")
 		_, _ = reader.ReadString('\n')
 		os.Exit(1)
@@ -462,6 +472,7 @@ func realizarChecagemAtualizacao(reader *bufio.Reader) {
 
 	hasUpdate, remoteBuild, err := checkUpdate()
 	if err != nil {
+		LogError("Erro ao verificar atualizacoes no GitHub", err)
 		fmt.Printf(Red+"\nErro ao verificar atualizacoes: %v\n"+Reset, err)
 		fmt.Printf("\n%sVoce pode baixar o executavel (.exe) diretamente em:%s\n%s%s%s\n", Bold+ThemeYellow, Reset, ThemeCyan, downloadURL, Reset)
 		return
@@ -476,6 +487,7 @@ func realizarChecagemAtualizacao(reader *bufio.Reader) {
 		resp = strings.ToLower(strings.TrimSpace(resp))
 		if resp == "s" || resp == "sim" {
 			if err := downloadAndUpdate(remoteBuild); err != nil {
+				LogError("Falha ao baixar e aplicar atualizacao do BuscaTextual", err)
 				fmt.Printf(Red+"\nFalha ao atualizar: %v\n"+Reset, err)
 				fmt.Printf("%sLink direto para download manual:%s %s%s%s\n", Yellow, Reset, ThemeCyan, downloadURL, Reset)
 			}
@@ -742,6 +754,7 @@ func realizarIndexacao(reader *bufio.Reader) {
 		batchSize := 5000
 		tx, err := db.Begin(true)
 		if err != nil {
+			LogError("Erro ao abrir transacao no banco durante indexacao", err)
 			fmt.Printf("\n%sErro ao abrir transacao no banco: %v%s\n", Red, err, Reset)
 			dbDone <- 0
 			return
@@ -756,6 +769,7 @@ func realizarIndexacao(reader *bufio.Reader) {
 				_ = tx.Commit()
 				tx, err = db.Begin(true)
 				if err != nil {
+					LogError("Erro ao continuar transacao no banco durante lote de indexacao", err)
 					fmt.Printf("\n%sErro ao continuar transacao: %v%s\n", Red, err, Reset)
 					dbDone <- count
 					return
@@ -1458,6 +1472,7 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 			for path := range jobs {
 				fileMatches, err := processFile(path, config.Mode, config.normTerms, config.MatchingMode, searchIndexChan)
 				if err != nil {
+					LogError(fmt.Sprintf("Falha ao processar arquivo %s", path), err)
 					errorsCh <- fmt.Sprintf("Falha ao ler arquivo %s: %v", path, err)
 					continue
 				}
@@ -1473,6 +1488,7 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 
 	walkErr := filepath.WalkDir(config.BaseDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
+			LogError(fmt.Sprintf("Erro ao percorrer caminho durante busca: %s", path), walkErr)
 			fmt.Printf("\n%sIgnorando caminho com erro: %s (%v)%s\n", Red, path, walkErr, Reset)
 			return nil
 		}
@@ -1513,10 +1529,12 @@ func runSearch(config SearchConfig) (SearchResult, error) {
 
 	if len(matches) == 0 {
 		if err := reporter.WriteNoMatches(); err != nil {
+			LogError("Erro ao escrever no_matches no relatorio", err)
 			return SearchResult{}, err
 		}
 	} else {
 		if err := reporter.Append(matches); err != nil {
+			LogError("Falha ao salvar ocorrencias no relatorio", err)
 			fmt.Printf("\n%sFalha ao salvar no relatorio: %v%s\n", Red, err, Reset)
 		}
 	}
@@ -1735,6 +1753,7 @@ func normalizeFormat(fmtStr string) string {
 func createReport(config SearchConfig) (*ReportWriter, error) {
 	reportDir := "resultados_busca"
 	if err := os.MkdirAll(reportDir, 0o755); err != nil {
+		LogError("Falha ao criar diretorio de relatorios de busca", err)
 		return nil, err
 	}
 
@@ -1749,11 +1768,13 @@ func createReport(config SearchConfig) (*ReportWriter, error) {
 	fileName := fmt.Sprintf("resultado_busca_%s.%s", timestamp, format)
 	filePath, err := filepath.Abs(filepath.Join(reportDir, fileName))
 	if err != nil {
+		LogError("Falha ao resolver caminho absoluto do relatorio", err)
 		return nil, err
 	}
 
 	file, err := os.Create(filePath)
 	if err != nil {
+		LogError(fmt.Sprintf("Falha ao criar arquivo de relatorio %s", filePath), err)
 		return nil, err
 	}
 
@@ -1993,11 +2014,13 @@ func (r *ReportWriter) writeJSON() error {
 
 	data, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
+		LogError("Falha ao serializar relatorio JSON", err)
 		return err
 	}
 
 	_, err = r.Writer.Write(data)
 	if err != nil {
+		LogError("Falha ao escrever relatorio JSON em disco", err)
 		return err
 	}
 	_, err = r.Writer.WriteString("\n")

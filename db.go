@@ -28,18 +28,24 @@ func initDB() error {
 		if err == bbolt.ErrTimeout {
 			return errDatabaseLocked
 		}
+		LogError("Falha ao abrir o banco de dados 'buscatextual.db'", err)
 		return err
 	}
 
 	return db.Update(func(tx *bbolt.Tx) error {
 		if _, err := tx.CreateBucketIfNotExists([]byte("Files")); err != nil {
+			LogError("Falha ao criar bucket 'Files' no banco", err)
 			return err
 		}
 		if _, err := tx.CreateBucketIfNotExists([]byte("DiskConfig")); err != nil {
+			LogError("Falha ao criar bucket 'DiskConfig' no banco", err)
 			return err
 		}
-		_, err = tx.CreateBucketIfNotExists([]byte("AppConfig"))
-		return err
+		if _, err := tx.CreateBucketIfNotExists([]byte("AppConfig")); err != nil {
+			LogError("Falha ao criar bucket 'AppConfig' no banco", err)
+			return err
+		}
+		return nil
 	})
 }
 
@@ -140,13 +146,17 @@ func getMatchingMode() string {
 
 func saveMatchingMode(mode string) error {
 	if db == nil {
-		return fmt.Errorf("banco de dados nao inicializado")
+		err := fmt.Errorf("banco de dados nao inicializado")
+		LogError("Erro ao salvar modo de correspondencia", err)
+		return err
 	}
 	modeLower := strings.ToLower(strings.TrimSpace(mode))
 	if modeLower != "ampla" && modeLower != "exata" {
-		return fmt.Errorf("modo invalido: %s (opcoes validas: 'ampla', 'exata')", mode)
+		err := fmt.Errorf("modo invalido: %s (opcoes validas: 'ampla', 'exata')", mode)
+		LogError("Erro de validacao ao salvar modo de correspondencia", err)
+		return err
 	}
-	return db.Update(func(tx *bbolt.Tx) error {
+	err := db.Update(func(tx *bbolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte("AppConfig"))
 		if err != nil {
 			return err
@@ -157,6 +167,10 @@ func saveMatchingMode(mode string) error {
 		}
 		return b.Put([]byte("matching_mode"), buf)
 	})
+	if err != nil {
+		LogError("Falha ao persistir matching_mode no banco", err)
+	}
+	return err
 }
 
 func getMaxSearchHistory() int {
@@ -184,9 +198,11 @@ func getMaxSearchHistory() int {
 
 func saveMaxSearchHistory(limit int) error {
 	if db == nil {
-		return fmt.Errorf("banco de dados nao inicializado")
+		err := fmt.Errorf("banco de dados nao inicializado")
+		LogError("Erro ao salvar max_search_history", err)
+		return err
 	}
-	return db.Update(func(tx *bbolt.Tx) error {
+	err := db.Update(func(tx *bbolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte("AppConfig"))
 		if err != nil {
 			return err
@@ -197,6 +213,10 @@ func saveMaxSearchHistory(limit int) error {
 		}
 		return b.Put([]byte("max_search_history"), buf)
 	})
+	if err != nil {
+		LogError("Falha ao persistir max_search_history no banco", err)
+	}
+	return err
 }
 
 func getReportFormat() string {
@@ -227,13 +247,17 @@ func getReportFormat() string {
 
 func saveReportFormat(format string) error {
 	if db == nil {
-		return fmt.Errorf("banco de dados nao inicializado")
+		err := fmt.Errorf("banco de dados nao inicializado")
+		LogError("Erro ao salvar report_format", err)
+		return err
 	}
 	formatLower := strings.ToLower(strings.TrimSpace(format))
 	if formatLower != "csv" && formatLower != "json" && formatLower != "toml" {
-		return fmt.Errorf("formato invalido: %s", format)
+		err := fmt.Errorf("formato invalido: %s", format)
+		LogError("Erro de validacao ao salvar report_format", err)
+		return err
 	}
-	return db.Update(func(tx *bbolt.Tx) error {
+	err := db.Update(func(tx *bbolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte("AppConfig"))
 		if err != nil {
 			return err
@@ -244,6 +268,10 @@ func saveReportFormat(format string) error {
 		}
 		return b.Put([]byte("report_format"), buf)
 	})
+	if err != nil {
+		LogError("Falha ao persistir report_format no banco", err)
+	}
+	return err
 }
 
 // putIndexHelper é uma função auxiliar para salvar metadados em um bucket aberto
@@ -266,6 +294,7 @@ func putIndexHelper(b *bbolt.Bucket, path string, size int64, modTimeStr string)
 
 	buf, err := json.Marshal(meta)
 	if err != nil {
+		LogError(fmt.Sprintf("Falha ao serializar metadados do arquivo: %s", path), err)
 		return err
 	}
 
@@ -292,7 +321,7 @@ func getDiskOptimalThreads(diskID string) int {
 }
 
 func saveDiskOptimalThreads(diskID string, threads int) error {
-	return db.Update(func(tx *bbolt.Tx) error {
+	err := db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte("DiskConfig"))
 		if b == nil {
 			return fmt.Errorf("bucket DiskConfig nao existe")
@@ -303,6 +332,10 @@ func saveDiskOptimalThreads(diskID string, threads int) error {
 		}
 		return b.Put([]byte(diskID), buf)
 	})
+	if err != nil {
+		LogError(fmt.Sprintf("Falha ao salvar threads otimas para o disco %s", diskID), err)
+	}
+	return err
 }
 
 func closeDB() {
@@ -312,7 +345,7 @@ func closeDB() {
 }
 
 func resetOptimalThreads() error {
-	return db.Update(func(tx *bbolt.Tx) error {
+	err := db.Update(func(tx *bbolt.Tx) error {
 		err := tx.DeleteBucket([]byte("DiskConfig"))
 		if err != nil && err != bbolt.ErrBucketNotFound {
 			return err
@@ -320,5 +353,9 @@ func resetOptimalThreads() error {
 		_, err = tx.CreateBucketIfNotExists([]byte("DiskConfig"))
 		return err
 	})
+	if err != nil {
+		LogError("Falha ao resetar configuracoes de threads no banco", err)
+	}
+	return err
 }
 
