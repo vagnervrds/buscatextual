@@ -8,3 +8,4 @@
 resultados_busca/
 resultado_busca_*.txt
 teste_cli/
+build_release.bat
