@@ -9,3 +9,5 @@ resultados_busca/
 resultado_busca_*.txt
 teste_cli/
 build_release.bat
+generate_release_notes.py
+release_notes.txt
