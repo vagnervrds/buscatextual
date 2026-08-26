@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -315,8 +316,16 @@ func checkUpdate() (hasUpdate bool, remoteBuild int, err error) {
 	}
 	defer resp.Body.Close()
 
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, 0, fmt.Errorf("falha ao ler resposta do GitHub: %v", err)
+	}
+
+	// Remove UTF-8 BOM (Byte Order Mark) se presente
+	bodyBytes = bytes.TrimPrefix(bodyBytes, []byte{0xEF, 0xBB, 0xBF})
+
 	var remoteInfo RemoteBuildInfo
-	if err := json.NewDecoder(resp.Body).Decode(&remoteInfo); err != nil {
+	if err := json.Unmarshal(bodyBytes, &remoteInfo); err != nil {
 		return false, 0, fmt.Errorf("falha ao decodificar JSON de versao: %v", err)
 	}
 

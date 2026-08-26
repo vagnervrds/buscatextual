@@ -11,7 +11,7 @@ set "GOCACHE=%ROOT%.gocache"
 set "GOMODCACHE=%ROOT%.gomodcache"
 
 echo Atualizando contador de build...
-for /f %%i in ('powershell -NoProfile -Command "$file='%ROOT%build.json'; if (-not (Test-Path $file)) { '{\"build\": 0}' | Out-File $file -Encoding utf8 }; $data = Get-Content $file -Raw | ConvertFrom-Json; $data.build++; $data | ConvertTo-Json -Depth 2 | Out-File $file -Encoding utf8; Write-Output $data.build"') do set BUILD_NUM=%%i
+for /f %%i in ('powershell -NoProfile -Command "$file='%ROOT%build.json'; if (-not (Test-Path $file)) { [System.IO.File]::WriteAllText($file, '{\"build\": 0}', (New-Object System.Text.UTF8Encoding($false))) }; $data = Get-Content $file -Raw | ConvertFrom-Json; $data.build++; [System.IO.File]::WriteAllText($file, ($data | ConvertTo-Json -Depth 2), (New-Object System.Text.UTF8Encoding($false))); Write-Output $data.build"') do set BUILD_NUM=%%i
 
 echo Build incrementado para: %BUILD_NUM%
 echo Configurando icone...
