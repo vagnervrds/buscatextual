@@ -453,17 +453,20 @@ func realizarChecagemAtualizacao(reader *bufio.Reader) {
 	fmt.Println(Bold + " Checando Atualizacoes no GitHub..." + Reset)
 	fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
 
+	downloadURL := "https://raw.githubusercontent.com/vagnervrds/buscatextual/master/buscatextual.exe"
+
 	localBuild := getLocalBuildNumber()
 	fmt.Printf(" Versao/Build Local: %s%s%s (build %d)\n", Bold+ThemeGreen, BuildVersion, Reset, localBuild)
 
 	hasUpdate, remoteBuild, err := checkUpdate()
 	if err != nil {
 		fmt.Printf(Red+"\nErro ao verificar atualizacoes: %v\n"+Reset, err)
+		fmt.Printf("\n%sVoce pode baixar o executavel (.exe) diretamente em:%s\n%s%s%s\n", Bold+ThemeYellow, Reset, ThemeCyan, downloadURL, Reset)
 		return
 	}
 
 	fmt.Printf(" Versao/Build no GitHub: %s%d%s\n", Bold+ThemeCyan, remoteBuild, Reset)
-	fmt.Printf(" URL do Executavel (.exe): %shttps://raw.githubusercontent.com/vagnervrds/buscatextual/master/buscatextual.exe%s\n", ThemeCyan, Reset)
+	fmt.Printf(" URL do Executavel (.exe): %s%s%s\n", ThemeCyan, downloadURL, Reset)
 
 	if hasUpdate {
 		fmt.Println(Bold + ThemeYellow + "\n[!] Nova versao disponivel!" + Reset)
@@ -472,6 +475,7 @@ func realizarChecagemAtualizacao(reader *bufio.Reader) {
 		if resp == "s" || resp == "sim" {
 			if err := downloadAndUpdate(remoteBuild); err != nil {
 				fmt.Printf(Red+"\nFalha ao atualizar: %v\n"+Reset, err)
+				fmt.Printf("%sLink direto para download manual:%s %s%s%s\n", Yellow, Reset, ThemeCyan, downloadURL, Reset)
 			}
 		} else {
 			fmt.Println(Yellow + "Atualizacao cancelada." + Reset)
@@ -1131,6 +1135,16 @@ func realizarConfiguracoes(reader *bufio.Reader) {
 		currentFormat := getReportFormat()
 		currentMatchingMode := getMatchingMode()
 
+		execPath, err := os.Executable()
+		if err != nil {
+			execPath = "Desconhecido"
+		}
+
+		dbSizeStr := "0 B"
+		if info, err := os.Stat("buscatextual.db"); err == nil {
+			dbSizeStr = formatSize(info.Size())
+		}
+
 		modeDesc := "Ampla (ignora acentos e maiusculas) [padrao]"
 		if currentMatchingMode == "exata" {
 			modeDesc = "Exata (busca literal/sensivel)"
@@ -1140,7 +1154,9 @@ func realizarConfiguracoes(reader *bufio.Reader) {
 		fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
 		fmt.Println(Bold + " Configuracoes" + Reset)
 		fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
-		fmt.Printf(" Limite atual de relatorios na pasta /resultados_busca: %s%d%s\n", Bold+ThemeGreen, currentLimit, Reset)
+		fmt.Printf(" Local de instalacao (.exe): %s%s%s\n", Bold+ThemeCyan, execPath, Reset)
+		fmt.Printf(" Tamanho do banco de dados:  %s%s%s (buscatextual.db)\n", Bold+ThemeGreen, dbSizeStr, Reset)
+		fmt.Printf(" Limite de arquivos historico: %s%d%s (/resultados_busca)\n", Bold+ThemeGreen, currentLimit, Reset)
 		fmt.Printf(" Formato padrao do relatorio: %s%s%s\n", Bold+ThemeGreen, strings.ToUpper(currentFormat), Reset)
 		fmt.Printf(" Modo de busca (correspondencia): %s%s%s\n\n", Bold+ThemeGreen, modeDesc, Reset)
 		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Alterar limite de arquivos de historico\n")
