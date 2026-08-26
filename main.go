@@ -365,9 +365,11 @@ func downloadAndUpdate(remoteBuild int) error {
 	}
 
 	urls := []string{
-		"https://github.com/vagnervrds/buscatextual/releases/latest/download/buscatextual.exe",
 		"https://raw.githubusercontent.com/vagnervrds/buscatextual/master/buscatextual.exe",
+		"https://github.com/vagnervrds/buscatextual/raw/master/buscatextual.exe",
 		"https://raw.githubusercontent.com/vagnervrds/buscatextual/main/buscatextual.exe",
+		"https://github.com/vagnervrds/buscatextual/raw/main/buscatextual.exe",
+		"https://github.com/vagnervrds/buscatextual/releases/latest/download/buscatextual.exe",
 	}
 
 	var resp *http.Response
