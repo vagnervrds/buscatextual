@@ -1,0 +1,9 @@
+{
+  "api_url": "http://127.0.0.1:8045/v1/chat/completions",
+  "api_key": "SEU_API_KEY_AQUI",
+  "model_name": "gemini-2.5-flash",
+  "temperature": 0.3,
+  "timeout_seconds": 30,
+  "commit_limit": 30,
+  "cleanup_keep_releases": 3
+}

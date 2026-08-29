@@ -232,35 +232,38 @@ func main() {
 		fmt.Printf("   "+Bold+ThemeCyan+"Busca Textual"+Reset+" - Versao/Build: "+Bold+ThemeGreen+"%s\n"+Reset, BuildVersion)
 		fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
 		fmt.Println(Bold + " Menu Principal:" + Reset)
-		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Busca Rapida (%sBanco de Dados%s - Somente Nomes)\n", Bold, Reset)
-		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Buscar (%sDisco%s - Nome e Conteudo)\n", Bold, Reset)
-		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Indexar Pasta (Atualizar Banco)\n")
-		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Checar Atualizacoes (GitHub)\n")
-		fmt.Printf("  "+ThemeYellow+"5"+Reset+" - Resetar Benchmarks de Concorrencia\n")
-		fmt.Printf("  "+ThemeYellow+"6"+Reset+" - Configuracoes\n")
-		fmt.Printf("  "+ThemeYellow+"7"+Reset+" - Sair\n")
+		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Abrir Interface Web / Dashboard (%sNavegador%s)\n", Bold, Reset)
+		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Busca Rapida (%sBanco de Dados%s - Somente Nomes)\n", Bold, Reset)
+		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Buscar (%sDisco%s - Nome e Conteudo)\n", Bold, Reset)
+		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Indexar Pasta (Atualizar Banco)\n")
+		fmt.Printf("  "+ThemeYellow+"5"+Reset+" - Checar Atualizacoes (GitHub)\n")
+		fmt.Printf("  "+ThemeYellow+"6"+Reset+" - Resetar Benchmarks de Concorrencia\n")
+		fmt.Printf("  "+ThemeYellow+"7"+Reset+" - Configuracoes\n")
+		fmt.Printf("  "+ThemeYellow+"8"+Reset+" - Sair\n")
 		fmt.Println(Bold + ThemeCyan + "--------------------------------------------------" + Reset)
 
 		opcao := prompt(reader, Bold+"Escolha uma opcao: "+Reset)
 
 		switch opcao {
 		case "1":
+			openTableViewer("")
+		case "2":
 			if realizarBuscaRapida(reader) {
 				return
 			}
-		case "2":
+		case "3":
 			if realizarBusca(reader) {
 				return
 			}
-		case "3":
-			realizarIndexacao(reader)
 		case "4":
-			realizarChecagemAtualizacao(reader)
+			realizarIndexacao(reader)
 		case "5":
-			realizarResetBenchmarks(reader)
+			realizarChecagemAtualizacao(reader)
 		case "6":
-			realizarConfiguracoes(reader)
+			realizarResetBenchmarks(reader)
 		case "7":
+			realizarConfiguracoes(reader)
+		case "8":
 			fmt.Println(Bold + ThemeGreen + "\nObrigado por usar o BuscaTextual! Ate logo." + Reset)
 			return
 		default:
@@ -977,24 +980,27 @@ func postSearchMenu(reader *bufio.Reader, reportPath string, matches []Match) bo
 		fmt.Println()
 		fmt.Println(Bold + "O que deseja fazer agora?" + Reset)
 		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Abrir arquivo de relatorio\n")
-		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Abrir pastas dos resultados passo a passo\n")
-		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Ver resultados no terminal\n")
-		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Voltar ao menu principal\n")
-		fmt.Printf("  "+ThemeYellow+"5"+Reset+" - Sair\n")
+		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Abrir tabela interativa (GUI / Navegador)\n")
+		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Abrir pastas dos resultados passo a passo\n")
+		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Ver resultados no terminal\n")
+		fmt.Printf("  "+ThemeYellow+"5"+Reset+" - Voltar ao menu principal\n")
+		fmt.Printf("  "+ThemeYellow+"6"+Reset+" - Sair\n")
 
-		switch prompt(reader, Bold+"Escolha uma opcao (1/2/3/4/5): "+Reset) {
+		switch prompt(reader, Bold+"Escolha uma opcao (1/2/3/4/5/6): "+Reset) {
 		case "1":
 			openFile(reportPath)
 		case "2":
+			openTableViewer(reportPath)
+		case "3":
 			quitToMainMenu := abrirPastasPassoAPasso(reader, matches)
 			if quitToMainMenu {
 				return true
 			}
-		case "3":
-			exibirResultadosTerminal(reader, matches)
 		case "4":
-			return true
+			exibirResultadosTerminal(reader, matches)
 		case "5":
+			return true
+		case "6":
 			return false
 		default:
 			fmt.Println(Red + "Opcao invalida." + Reset)

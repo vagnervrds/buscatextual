@@ -1,0 +1,2306 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BuscaTextual - Painel de Controle e Resultados</title>
+  <link rel="icon" type="image/png" href="/api/icon">
+  <style>
+    /* =========================================
+       VARIABLES & THEME CONFIGURATION (Design System)
+       ========================================= */
+    :root {
+      /* Dark Theme (Default) */
+      --bg-body: #0a0a0a;
+      --bg-container: #111111;
+      --bg-sidebar: #18181b;
+      --bg-surface: #18181b;
+      --bg-input: #27272a;
+
+      --border-color: #27272a;
+      --border-input: #3f3f46;
+
+      --text-primary: #e4e4e7;
+      --text-heading: #fafafa;
+      --text-muted: #a1a1aa;
+      --text-label: #d4d4d8;
+
+      --color-primary: #3b82f6;
+      --color-primary-hover: #2563eb;
+      --color-success: #10b981;
+      --color-success-hover: #059669;
+      --color-danger: #ef4444;
+      --color-danger-hover: #dc2626;
+      --color-warning: #f59e0b;
+      --color-warning-hover: #d97706;
+
+      --shadow-focus: rgba(16, 185, 129, 0.1);
+      --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      --header-height: 64px;
+      
+      /* Table Row Colors */
+      --table-row-even: #141414;
+      --table-row-odd: #1a1a1a;
+      --table-row-hover: #22262e;
+
+      /* Highlights */
+      --highlight-bg: #facc15;
+      --highlight-text: #000000;
+      --highlight-line-bg: rgba(245, 158, 11, 0.2);
+    }
+
+    [data-theme="light"] {
+      /* Light Theme Overrides */
+      --bg-body: #f4f4f5;
+      --bg-container: #ffffff;
+      --bg-sidebar: #ffffff;
+      --bg-surface: #f0f0f0;
+      --bg-input: #ffffff;
+
+      --border-color: #e4e4e7;
+      --border-input: #d4d4d8;
+
+      --text-primary: #3f3f46;
+      --text-heading: #18181b;
+      --text-muted: #71717a;
+      --text-label: #52525b;
+
+      --color-primary: #2563eb;
+      --color-primary-hover: #1d4ed8;
+      
+      /* Table Row Colors */
+      --table-row-even: #fafafa;
+      --table-row-odd: #f4f4f5;
+      --table-row-hover: #e5e9f0;
+
+      --highlight-bg: #fef08a;
+      --highlight-text: #854d0e;
+      --highlight-line-bg: rgba(254, 240, 138, 0.4);
+    }
+
+    /* Reset */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      color: var(--text-primary);
+      line-height: 1.6;
+      background-color: var(--bg-body);
+      transition: background-color 0.2s, color 0.2s;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* Navigation Bar (Top Menu) */
+    .navbar {
+      height: var(--header-height);
+      background-color: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      padding: 0 30px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: var(--shadow-card);
+    }
+
+    .navbar-brand {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-heading);
+      margin-right: 35px;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+    }
+
+    .navbar-brand-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      object-fit: contain;
+    }
+
+    .navbar-menu {
+      display: flex;
+      gap: 6px;
+      flex: 1;
+      height: 100%;
+      align-items: center;
+    }
+
+    .nav-item {
+      position: relative;
+      height: 100%;
+      display: flex;
+      align-items: center;
+    }
+
+    .nav-link {
+      padding: 8px 16px;
+      color: var(--text-primary);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      border-radius: 6px;
+      transition: all 0.2s;
+      cursor: pointer;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-link:hover,
+    .nav-item.active .nav-link {
+      background-color: var(--bg-surface);
+      color: var(--color-primary);
+    }
+
+    .navbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Main Container */
+    .main-container {
+      flex: 1;
+      width: 100%;
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 24px 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .content-card {
+      background-color: var(--bg-container);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: var(--shadow-card);
+    }
+
+    /* Typography */
+    h1 {
+      color: var(--text-heading);
+      font-weight: 600;
+      font-size: 1.85rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    h2 {
+      margin: 20px 0 15px;
+      color: var(--text-heading);
+      font-weight: 600;
+      font-size: 1.35rem;
+    }
+
+    h3 {
+      margin: 15px 0 10px;
+      font-size: 1.15rem;
+      color: var(--text-heading);
+      font-weight: 500;
+    }
+
+    p {
+      margin-bottom: 12px;
+      color: var(--text-primary);
+    }
+
+    /* Sections */
+    .view-section {
+      display: none;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .view-section.active {
+      display: flex;
+    }
+
+    /* Form Elements */
+    .form-section {
+      padding: 20px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 20px;
+      background-color: var(--bg-surface);
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 500;
+      color: var(--text-label);
+      font-size: 0.9rem;
+    }
+
+    input[type=text],
+    input[type=number],
+    select,
+    textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      border: 1px solid var(--border-input);
+      background-color: var(--bg-input);
+      color: var(--text-primary);
+      font-family: inherit;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      margin-bottom: 15px;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      outline: none;
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+
+    .checkbox-container {
+      border: 1px solid var(--border-input);
+      border-radius: 8px;
+      padding: 14px;
+      background-color: var(--bg-surface);
+      margin-bottom: 15px;
+    }
+
+    .checkbox-item {
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .checkbox-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .checkbox-item input[type=checkbox],
+    .checkbox-item input[type=radio] {
+      width: auto;
+      margin: 0;
+      accent-color: var(--color-primary);
+      cursor: pointer;
+    }
+
+    .checkbox-item label {
+      margin: 0;
+      color: var(--text-label);
+      cursor: pointer;
+      display: inline-block;
+    }
+
+    /* Buttons */
+    .buttons-demo {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 15px;
+    }
+
+    button,
+    .btn {
+      padding: 9px 18px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.18s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      text-decoration: none;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background-color: var(--color-primary);
+      color: #ffffff;
+    }
+    .btn-primary:hover {
+      background-color: var(--color-primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-success {
+      background-color: var(--color-success);
+      color: #ffffff;
+    }
+    .btn-success:hover {
+      background-color: var(--color-success-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-danger {
+      background-color: var(--color-danger);
+      color: #ffffff;
+    }
+    .btn-danger:hover {
+      background-color: var(--color-danger-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-warning {
+      background-color: var(--color-warning);
+      color: #ffffff;
+    }
+    .btn-warning:hover {
+      background-color: var(--color-warning-hover);
+    }
+
+    .btn-outline {
+      background-color: transparent;
+      border: 1px solid var(--border-input);
+      color: var(--text-primary);
+    }
+    .btn-outline:hover {
+      background-color: var(--bg-surface);
+      border-color: var(--text-muted);
+    }
+
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+    }
+
+    .btn-icon {
+      padding: 8px;
+      border-radius: 50%;
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+    }
+
+    /* Badges & Meta Grid */
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 15px;
+    }
+
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .meta-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .meta-value {
+      font-size: 0.92rem;
+      color: var(--text-heading);
+      font-weight: 500;
+      word-break: break-all;
+    }
+
+    .badge-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .badge-primary {
+      background-color: rgba(59, 130, 246, 0.15);
+      color: var(--color-primary);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .badge-term {
+      background-color: rgba(245, 158, 11, 0.15);
+      color: var(--color-warning);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .badge-count {
+      background-color: rgba(16, 185, 129, 0.15);
+      color: var(--color-success);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    /* Live Search Progress Widget */
+    .progress-widget {
+      background: linear-gradient(135deg, var(--bg-surface), var(--bg-container));
+      border: 1px solid var(--color-primary);
+      border-radius: 10px;
+      padding: 18px 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 0 15px rgba(59, 130, 246, 0.15);
+      display: none;
+      animation: pulseGlow 2s infinite alternate;
+    }
+    .progress-widget.active {
+      display: block;
+    }
+
+    @keyframes pulseGlow {
+      from { border-color: rgba(59, 130, 246, 0.4); }
+      to { border-color: rgba(59, 130, 246, 0.9); }
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .progress-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-heading);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .progress-stats {
+      display: flex;
+      gap: 20px;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      flex-wrap: wrap;
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 8px;
+      background-color: var(--bg-input);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--color-primary), var(--color-success));
+      width: 100%;
+      animation: progressAnim 1.5s infinite linear;
+      background-size: 200% 100%;
+    }
+
+    @keyframes progressAnim {
+      0% { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
+
+    /* Toolbar / Controls */
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 15px;
+    }
+
+    .search-box {
+      position: relative;
+      flex: 1;
+      min-width: 260px;
+      max-width: 480px;
+    }
+
+    .search-box input {
+      margin-bottom: 0;
+      padding-left: 36px;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .clear-search-btn {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1rem;
+      display: none;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .filter-group select {
+      margin-bottom: 0;
+      width: auto;
+      min-width: 130px;
+    }
+
+    /* Tables */
+    .table-container {
+      overflow-x: auto;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      margin-bottom: 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background-color: var(--bg-surface);
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-primary);
+      vertical-align: middle;
+    }
+
+    th {
+      background-color: var(--bg-input);
+      color: var(--text-heading);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    th:hover {
+      color: var(--color-primary);
+    }
+
+    th.sort-asc::after {
+      content: " ▲";
+      color: var(--color-primary);
+    }
+    th.sort-desc::after {
+      content: " ▼";
+      color: var(--color-primary);
+    }
+    th.no-sort {
+      cursor: default;
+    }
+    th.no-sort:hover {
+      color: var(--text-heading);
+    }
+
+    tbody tr:nth-child(odd) {
+      background-color: var(--table-row-odd);
+    }
+
+    tbody tr:nth-child(even) {
+      background-color: var(--table-row-even);
+    }
+
+    tbody tr:hover {
+      background-color: var(--table-row-hover) !important;
+    }
+
+    .file-title {
+      font-weight: 600;
+      color: var(--text-heading);
+      word-break: break-all;
+    }
+
+    .file-path {
+      font-size: 0.775rem;
+      color: var(--text-muted);
+      font-family: monospace;
+      word-break: break-all;
+      margin-top: 2px;
+    }
+
+    .snippet-box {
+      font-family: monospace;
+      font-size: 0.825rem;
+      background-color: rgba(0, 0, 0, 0.2);
+      padding: 6px 10px;
+      border-radius: 4px;
+      max-height: 80px;
+      overflow-y: auto;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    mark.highlight {
+      background-color: var(--highlight-bg);
+      color: var(--highlight-text);
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: 700;
+    }
+
+    /* Reports List Grid */
+    .reports-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+      gap: 16px;
+    }
+
+    .report-card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 14px;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .report-card:hover {
+      border-color: var(--color-primary);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-card);
+    }
+
+    .report-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .report-card-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-heading);
+      word-break: break-all;
+    }
+
+    .report-card-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+    }
+
+    .report-card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--border-color);
+      padding-top: 10px;
+    }
+
+    /* Pagination */
+    .pagination-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 18px;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+
+    /* Modals & Popups */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+      opacity: 1;
+    }
+
+    .modal-container {
+      background-color: var(--bg-container);
+      width: 90%;
+      max-width: 600px;
+      max-height: 90vh;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
+      transform: scale(0.96);
+      transition: transform 0.25s ease;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .modal-overlay.active .modal-container {
+      transform: scale(1);
+    }
+
+    .modal-container-large {
+      max-width: 1100px;
+      height: 85vh;
+    }
+
+    .modal-header {
+      padding: 16px 22px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: var(--bg-sidebar);
+    }
+
+    .modal-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--text-heading);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 24px;
+      padding: 0;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: var(--text-heading);
+    }
+
+    .modal-body {
+      padding: 22px;
+      color: var(--text-primary);
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-footer {
+      padding: 14px 22px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      background-color: var(--bg-surface);
+      flex-wrap: wrap;
+    }
+
+    /* File Preview Modal Styles */
+    .preview-meta-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 8px 14px;
+      margin-bottom: 14px;
+      font-size: 0.85rem;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .code-viewer-container {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: auto;
+      font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      max-height: 55vh;
+    }
+
+    [data-theme="light"] .code-viewer-container {
+      background-color: #f6f8fa;
+      color: #24292f;
+    }
+
+    .code-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .code-table td {
+      padding: 1px 8px;
+      border: none;
+      vertical-align: top;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .code-line-num {
+      width: 55px;
+      text-align: right;
+      color: var(--text-muted);
+      user-select: none;
+      background-color: rgba(0, 0, 0, 0.15);
+      border-right: 1px solid var(--border-color);
+      padding-right: 10px !important;
+    }
+
+    .code-line-content {
+      padding-left: 12px !important;
+    }
+
+    .code-line-highlight {
+      background-color: var(--highlight-line-bg) !important;
+    }
+    .code-line-highlight .code-line-num {
+      color: var(--color-warning);
+      font-weight: 700;
+    }
+
+    .media-preview-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      min-height: 300px;
+      max-height: 60vh;
+      overflow: auto;
+    }
+
+    .media-preview-container img {
+      max-width: 100%;
+      max-height: 55vh;
+      border-radius: 6px;
+      object-fit: contain;
+    }
+
+    .media-preview-container video,
+    .media-preview-container audio {
+      max-width: 100%;
+      border-radius: 6px;
+    }
+
+    .media-preview-container iframe {
+      width: 100%;
+      height: 55vh;
+      border: none;
+      border-radius: 6px;
+    }
+
+    /* Tabs */
+    .tabs-nav {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 18px;
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+    }
+
+    .tab-btn.active {
+      color: var(--color-primary);
+      border-bottom-color: var(--color-primary);
+    }
+
+    /* Messages / Alerts */
+    .mensagem {
+      margin: 10px 0;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mensagem.sucesso {
+      background-color: rgba(16, 185, 129, 0.1);
+      color: var(--color-success);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .mensagem.erro {
+      background-color: rgba(239, 68, 68, 0.1);
+      color: var(--color-danger);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    .mensagem.aviso {
+      background-color: rgba(245, 158, 11, 0.1);
+      color: var(--color-warning);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+    }
+
+    /* Toast Notification */
+    #toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 24px;
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .toast {
+      background-color: var(--bg-surface);
+      color: var(--text-heading);
+      border: 1px solid var(--border-color);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+      padding: 12px 18px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      animation: toastSlide 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      min-width: 260px;
+    }
+
+    .toast-success { border-left: 4px solid var(--color-success); }
+    .toast-info { border-left: 4px solid var(--color-primary); }
+    .toast-error { border-left: 4px solid var(--color-danger); }
+
+    @keyframes toastSlide {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .spinner {
+      border: 3px solid rgba(255,255,255,0.1);
+      border-radius: 50%;
+      border-top: 3px solid var(--color-primary);
+      width: 22px;
+      height: 22px;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 768px) {
+      .navbar {
+        padding: 0 15px;
+      }
+      .main-container {
+        padding: 15px;
+      }
+      .content-card {
+        padding: 18px;
+      }
+      .toolbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .search-box {
+        max-width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TOP NAVIGATION BAR -->
+  <header class="navbar">
+    <a class="navbar-brand" onclick="showHomeView()">
+      <img src="/api/icon" class="navbar-brand-icon" alt="Logo">
+      <span>BuscaTextual</span>
+    </a>
+
+    <nav class="navbar-menu">
+      <div class="nav-item" id="nav-dashboard">
+        <a class="nav-link" onclick="showHomeView()">📊 Histórico</a>
+      </div>
+
+      <div class="nav-item" id="nav-results">
+        <a class="nav-link" onclick="showTableView()">📋 Tabela de Resultados</a>
+      </div>
+
+      <div class="nav-item">
+        <button class="btn btn-primary btn-sm" onclick="openNewSearchModal()">
+          🔍 Nova Busca
+        </button>
+      </div>
+    </nav>
+
+    <div class="navbar-actions">
+      <select id="header-report-select" style="margin-bottom:0; width:auto; max-width:280px;" onchange="loadReport(this.value)">
+        <option value="">Carregando relatórios...</option>
+      </select>
+
+      <button id="btnThemeToggle" class="btn btn-outline btn-icon" title="Alternar Tema">
+        <span id="themeIcon">◐</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT AREA -->
+  <div class="main-container">
+    
+    <!-- Widget de Busca em Andamento em Tempo Real -->
+    <div id="live-search-widget" class="progress-widget">
+      <div class="progress-header">
+        <div class="progress-title">
+          <div class="spinner"></div>
+          <span id="progress-search-title">Busca em andamento no disco...</span>
+        </div>
+        <div>
+          <button class="btn btn-danger btn-sm" onclick="cancelActiveSearch()">
+            ✕ Cancelar Busca
+          </button>
+        </div>
+      </div>
+      <div class="progress-stats">
+        <div><strong>Arquivos Analisados:</strong> <span id="progress-scanned-count">0</span></div>
+        <div><strong>Ocorrências:</strong> <span id="progress-matches-count" style="color: var(--color-success); font-weight: 700;">0</span></div>
+        <div><strong>Tempo Decorrido:</strong> <span id="progress-elapsed-time">0s</span></div>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill"></div>
+      </div>
+    </div>
+
+    <!-- VIEW 1: DASHBOARD / HISTÓRICO DE RELATÓRIOS -->
+    <section id="view-home" class="view-section active">
+      <main class="content-card">
+        <h1>
+          <span>📁 Histórico de Buscas & Relatórios</span>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-primary btn-sm" onclick="openNewSearchModal()">
+              🔍 Nova Busca
+            </button>
+            <button class="btn btn-outline btn-sm" onclick="fetchReportsList()">
+              🔄 Atualizar
+            </button>
+          </div>
+        </h1>
+        <p>Selecione um relatório gerado anteriormente na pasta <code>resultados_busca/</code> para analisar os dados, ordenar, pesquisar e visualizar os arquivos diretamente.</p>
+
+        <div id="reports-grid" class="reports-grid" style="margin-top: 20px;">
+          <div style="grid-column: 1/-1; text-align: center; padding: 2rem;">
+            <div class="spinner"></div>
+            <p style="margin-top: 8px; color: var(--text-muted);">Buscando relatórios CSV salvos...</p>
+          </div>
+        </div>
+      </main>
+    </section>
+
+    <!-- VIEW 2: VISUALIZADOR DE TABELA INTERATIVA -->
+    <section id="view-table" class="view-section">
+      <main class="content-card">
+        <h1>
+          <span id="meta-report-title">📊 Relatório de Busca</span>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-outline btn-sm" onclick="downloadCurrentCSV()">
+              ⬇️ Baixar CSV
+            </button>
+            <button class="btn btn-outline btn-sm" onclick="showHomeView()">
+              ← Todos os Relatórios
+            </button>
+          </div>
+        </h1>
+
+        <!-- Metadata Section -->
+        <div class="form-section">
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Pasta Base</span>
+              <span class="meta-value" id="meta-base-dir">-</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Termos Buscados</span>
+              <div class="badge-list" id="meta-terms">-</div>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Modo & Alvo</span>
+              <div class="badge-list">
+                <span class="badge badge-primary" id="meta-mode">-</span>
+                <span class="badge" id="meta-target">-</span>
+              </div>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Filtros</span>
+              <div class="meta-value" style="font-size: 0.85rem;" id="meta-filters">-</div>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Data e Hora</span>
+              <span class="meta-value" id="meta-date">-</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Total de Ocorrências</span>
+              <div><span class="badge badge-count" id="meta-total-badge">0 resultados</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Toolbar & Filter Controls -->
+        <div class="toolbar">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="filter-input" placeholder="Filtrar por arquivo, trecho, pasta, linha..." oninput="onFilterChange()" autocomplete="off">
+            <button id="clear-search-btn" class="clear-search-btn" onclick="clearFilter()">✕</button>
+          </div>
+
+          <div class="filter-group">
+            <select id="filter-type" onchange="onFilterChange()" title="Filtrar por tipo">
+              <option value="">Todos os Tipos</option>
+              <option value="conteudo">Apenas Conteúdo</option>
+              <option value="nome">Apenas Nome</option>
+              <option value="diretorio">Apenas Diretório</option>
+            </select>
+
+            <select id="page-size-select" onchange="onPageSizeChange()" title="Linhas por página">
+              <option value="10">10 / pág.</option>
+              <option value="25" selected>25 / pág.</option>
+              <option value="50">50 / pág.</option>
+              <option value="100">100 / pág.</option>
+              <option value="500">500 / pág.</option>
+              <option value="all">Todos</option>
+            </select>
+
+            <button class="btn btn-outline btn-sm" onclick="resetSorting()" title="Redefinir ordenação">
+              ↻ Reset Ordenação
+            </button>
+          </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="table-container">
+          <table id="data-table">
+            <thead>
+              <tr>
+                <th style="width: 50px;" onclick="sortTable('id')">#</th>
+                <th onclick="sortTable('arquivo')" id="th-arquivo">Arquivo / Caminho</th>
+                <th style="width: 100px;" onclick="sortTable('tipo')" id="th-tipo">Tipo</th>
+                <th style="width: 70px;" onclick="sortTable('linha_num')" id="th-linha">Linha</th>
+                <th style="width: 100px;" onclick="sortTable('tamanho_bytes')" id="th-tamanho">Tamanho</th>
+                <th style="width: 150px;" onclick="sortTable('data_modificacao')" id="th-data">Modificado em</th>
+                <th onclick="sortTable('trecho')" id="th-trecho">Trecho Encontrado</th>
+                <th class="no-sort" style="width: 220px; text-align: center;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="table-body">
+              <tr>
+                <td colspan="8" style="text-align: center; padding: 2rem;">
+                  <div class="spinner"></div>
+                  <p style="margin-top: 8px; color: var(--text-muted);">Carregando dados da busca...</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Bar -->
+        <div class="pagination-bar">
+          <div id="pagination-info" style="font-size: 0.875rem; color: var(--text-muted);">
+            Exibindo 0 registros
+          </div>
+          <div id="pagination-controls" style="display: flex; gap: 4px;">
+            <!-- Gerado via JS -->
+          </div>
+        </div>
+
+      </main>
+    </section>
+
+  </div>
+
+  <!-- MODAL: NOVA BUSCA -->
+  <div id="modalNewSearch" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">🔍 Iniciar Nova Busca</h3>
+        <button class="modal-close" onclick="closeModal('modalNewSearch')">&times;</button>
+      </div>
+      <div class="modal-body">
+        
+        <div class="tabs-nav">
+          <button class="tab-btn active" id="tab-btn-db" onclick="switchSearchTab('db')">⚡ Busca Rápida (Banco)</button>
+          <button class="tab-btn" id="tab-btn-disk" onclick="switchSearchTab('disk')">📁 Busca no Disco</button>
+        </div>
+
+        <form id="search-form" onsubmit="submitNewSearch(event)">
+          
+          <div id="field-base-dir">
+            <label for="search-base-dir">Pasta Base:</label>
+            <input type="text" id="search-base-dir" placeholder="Ex: C:\MeusProjetos ou . para pasta atual" value=".">
+          </div>
+
+          <label for="search-terms">Termos de Busca (separados por ';'):</label>
+          <input type="text" id="search-terms" placeholder="Ex: relatorio; cliente; erro" required>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div id="field-mode">
+              <label for="search-mode">Modo da Busca:</label>
+              <select id="search-mode">
+                <option value="3" selected>Nome e Conteúdo</option>
+                <option value="1">Apenas Nome</option>
+                <option value="2">Apenas Conteúdo</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="search-target">Buscar por:</label>
+              <select id="search-target">
+                <option value="0" selected>Arquivos</option>
+                <option value="1">Apenas Diretórios</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div>
+              <label for="search-pos-filter">Filtro Positivo (ex: .py; .go):</label>
+              <input type="text" id="search-pos-filter" placeholder="Vazio para todos">
+            </div>
+
+            <div>
+              <label for="search-neg-filter">Filtro Negativo (ex: tmp; venv):</label>
+              <input type="text" id="search-neg-filter" placeholder="Vazio para nenhum">
+            </div>
+          </div>
+
+          <div>
+            <label for="search-matching">Correspondência de Texto:</label>
+            <select id="search-matching">
+              <option value="ampla" selected>Ampla (ignora maiúsculas/minúsculas e acentos)</option>
+              <option value="exata">Exata (diferencia acentos e maiúsculas)</option>
+            </select>
+          </div>
+
+          <div id="search-form-alert" style="display: none;"></div>
+        </form>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modalNewSearch')">Cancelar</button>
+        <button class="btn btn-primary" onclick="document.getElementById('search-form').requestSubmit()">
+          🚀 Iniciar Busca
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: VISUALIZADOR / PREVIEW DE ARQUIVO NO NAVEGADOR -->
+  <div id="modalPreview" class="modal-overlay">
+    <div class="modal-container modal-container-large">
+      <div class="modal-header">
+        <h3 class="modal-title">
+          <span id="preview-icon">📄</span>
+          <span id="preview-file-title">Visualizador de Arquivo</span>
+        </h3>
+        <button class="modal-close" onclick="closeModal('modalPreview')">&times;</button>
+      </div>
+      
+      <div class="modal-body" style="padding: 16px;">
+        <div class="preview-meta-bar">
+          <div><strong>Caminho:</strong> <span id="preview-path" style="font-family: monospace;">-</span></div>
+          <div><strong>Tamanho:</strong> <span id="preview-size">-</span> | <strong>Modificado:</strong> <span id="preview-date">-</span></div>
+        </div>
+
+        <!-- Container para Código / Texto -->
+        <div id="preview-code-box" class="code-viewer-container" style="display: none;">
+          <table class="code-table">
+            <tbody id="preview-code-body"></tbody>
+          </table>
+        </div>
+
+        <!-- Container para Imagens, Vídeos, Áudio, PDFs -->
+        <div id="preview-media-box" class="media-preview-container" style="display: none;"></div>
+
+        <!-- Container para Binários / Não suportados -->
+        <div id="preview-binary-box" style="display: none; text-align: center; padding: 40px;">
+          <div style="font-size: 3rem; margin-bottom: 10px;">📦</div>
+          <h3>Arquivo Binário</h3>
+          <p>Este formato não possui pré-visualização direta no navegador. Use o botão abaixo para abrir no programa padrão do seu sistema.</p>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-outline btn-sm" onclick="copyPreviewContent()" id="btn-copy-preview">
+          📋 Copiar Conteúdo
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="openPreviewInSystem()">
+          📄 Abrir no Programa Padrão
+        </button>
+        <button class="btn btn-success btn-sm" onclick="openPreviewFolder()">
+          📁 Abrir Pasta
+        </button>
+        <button class="btn btn-outline btn-sm" onclick="closeModal('modalPreview')">
+          Fechar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    // Estado Global da Aplicação
+    let appState = {
+      reports: [],
+      currentFileName: '',
+      currentReportData: null,
+      filteredRows: [],
+      displayRows: [],
+      filterText: '',
+      filterType: '',
+      sortColumn: 'id',
+      sortDirection: 'asc',
+      currentPage: 1,
+      pageSize: 25,
+      terms: [],
+      activeSearchType: 'disk',
+      previewCurrentPath: '',
+      previewRawContent: '',
+      progressInterval: null
+    };
+
+    // Inicialização
+    document.addEventListener('DOMContentLoaded', () => {
+      initTheme();
+      initBaseDir();
+      checkActiveSearch();
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const fileParam = urlParams.get('file');
+
+      fetchReportsList(fileParam);
+    });
+
+    function initBaseDir() {
+      const savedDir = localStorage.getItem('bt_last_base_dir');
+      const input = document.getElementById('search-base-dir');
+      if (input) {
+        if (savedDir) {
+          input.value = savedDir;
+        }
+        input.addEventListener('input', (e) => {
+          localStorage.setItem('bt_last_base_dir', e.target.value.trim());
+        });
+      }
+    }
+
+    // Tema Escuro / Claro (Selectos Design System)
+    const themeToggleBtn = document.getElementById('btnThemeToggle');
+    const themeIcon = document.getElementById('themeIcon');
+    const html = document.documentElement;
+
+    function initTheme() {
+      const savedTheme = localStorage.getItem('theme') || 'dark';
+      applyTheme(savedTheme);
+    }
+
+    function applyTheme(theme) {
+      if (theme === 'light') {
+        html.setAttribute('data-theme', 'light');
+        themeIcon.innerText = '☀';
+      } else {
+        html.removeAttribute('data-theme');
+        themeIcon.innerText = '☾';
+      }
+      localStorage.setItem('theme', theme);
+    }
+
+    themeToggleBtn.addEventListener('click', () => {
+      const currentTheme = html.getAttribute('data-theme');
+      const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+      applyTheme(newTheme);
+    });
+
+    // Modais
+    function openModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) modal.classList.add('active');
+    }
+
+    function closeModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) modal.classList.remove('active');
+    }
+
+    window.addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal-overlay')) {
+        e.target.classList.remove('active');
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+      }
+    });
+
+    // Views
+    function showHomeView() {
+      document.getElementById('view-home').classList.add('active');
+      document.getElementById('view-table').classList.remove('active');
+      document.getElementById('nav-dashboard').classList.add('active');
+      document.getElementById('nav-results').classList.remove('active');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
+    function showTableView() {
+      document.getElementById('view-home').classList.remove('active');
+      document.getElementById('view-table').classList.add('active');
+      document.getElementById('nav-dashboard').classList.remove('active');
+      document.getElementById('nav-results').classList.add('active');
+    }
+
+    // Carregar Lista de Relatórios
+    async function fetchReportsList(autoSelectFile) {
+      try {
+        const res = await fetch('/api/reports');
+        if (!res.ok) throw new Error('Erro ao listar relatórios');
+        const reports = await res.json();
+        appState.reports = reports || [];
+
+        renderReportsSelect();
+        renderReportsGrid();
+
+        if (autoSelectFile) {
+          loadReport(autoSelectFile);
+        } else if (appState.reports.length > 0 && !appState.currentFileName) {
+          loadReport(appState.reports[0].filename);
+        } else if (appState.reports.length === 0) {
+          showHomeView();
+        }
+      } catch (err) {
+        showToast('Erro ao carregar relatórios: ' + err.message, 'error');
+      }
+    }
+
+    function renderReportsSelect() {
+      const select = document.getElementById('header-report-select');
+      if (!select) return;
+
+      if (appState.reports.length === 0) {
+        select.innerHTML = '<option value="">Nenhum relatório encontrado</option>';
+        return;
+      }
+
+      select.innerHTML = appState.reports.map(r => {
+        const termsStr = r.termos && r.termos.length > 0 ? r.termos.join(', ') : 'todos';
+        const label = `${r.data_inicio || r.mod_time_formatted} - [${termsStr}] (${r.total_linhas || 0} itens)`;
+        const selected = r.filename === appState.currentFileName ? 'selected' : '';
+        return `<option value="${escapeHtml(r.filename)}" ${selected}>${escapeHtml(label)}</option>`;
+      }).join('');
+    }
+
+    function renderReportsGrid() {
+      const grid = document.getElementById('reports-grid');
+      if (!grid) return;
+
+      if (appState.reports.length === 0) {
+        grid.innerHTML = `
+          <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-muted);">
+            <div style="font-size: 3rem; margin-bottom: 10px;">📂</div>
+            <h3>Nenhum relatório CSV encontrado</h3>
+            <p>Clique em "Nova Busca" acima para pesquisar no disco ou no banco de dados.</p>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = appState.reports.map(r => {
+        const termsHtml = (r.termos && r.termos.length > 0)
+          ? r.termos.map(t => `<span class="badge badge-term">${escapeHtml(t)}</span>`).join(' ')
+          : '<span class="badge">Nenhum termo</span>';
+
+        return `
+          <div class="report-card" onclick="loadReport('${escapeHtml(r.filename)}')">
+            <div class="report-card-header">
+              <div class="report-card-title">${escapeHtml(r.filename)}</div>
+              <span class="badge badge-count">${r.total_linhas || 0} itens</span>
+            </div>
+            <div class="report-card-meta">
+              <div><strong>Data:</strong> ${escapeHtml(r.data_inicio || r.mod_time_formatted)}</div>
+              <div><strong>Pasta:</strong> <span style="font-family: monospace; font-size: 0.8rem;">${escapeHtml(r.pasta_base || '-')}</span></div>
+              <div style="margin-top: 4px;">${termsHtml}</div>
+              <div><strong>Modo:</strong> ${escapeHtml(r.modo || '-')} | <strong>Alvo:</strong> ${escapeHtml(r.alvo || '-')}</div>
+            </div>
+            <div class="report-card-footer">
+              <span style="font-size: 0.775rem; color: var(--text-muted);">${r.size_formatted || ''}</span>
+              <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); loadReport('${escapeHtml(r.filename)}')">
+                Abrir Análise 📊
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Carregar Relatório Selecionado
+    async function loadReport(fileName) {
+      if (!fileName) return;
+      appState.currentFileName = fileName;
+
+      const newUrl = window.location.pathname + '?file=' + encodeURIComponent(fileName);
+      window.history.replaceState({}, '', newUrl);
+
+      renderReportsSelect();
+      showTableView();
+
+      const tbody = document.getElementById('table-body');
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="8" style="text-align: center; padding: 2rem;">
+            <div class="spinner"></div>
+            <p style="margin-top: 8px; color: var(--text-muted);">Carregando ${escapeHtml(fileName)}...</p>
+          </td>
+        </tr>
+      `;
+
+      try {
+        const res = await fetch('/api/report?file=' + encodeURIComponent(fileName));
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || 'Falha ao ler o relatório');
+        }
+        const data = await res.json();
+        appState.currentReportData = data;
+        appState.terms = data.metadata.termos || [];
+
+        renderMetadata(data.metadata);
+        resetFiltersAndPagination();
+        applyFiltersAndSort();
+      } catch (err) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" style="text-align: center; padding: 2rem; color: var(--color-danger);">
+              ⚠️ ${escapeHtml(err.message)}
+            </td>
+          </tr>
+        `;
+        showToast('Erro ao carregar relatório: ' + err.message, 'error');
+      }
+    }
+
+    // Renderizar Metadados
+    function renderMetadata(meta) {
+      document.getElementById('meta-report-title').textContent = `📊 ${meta.arquivo_relatorio || 'Relatório'}`;
+      document.getElementById('meta-total-badge').textContent = `${meta.total_linhas || 0} resultados`;
+      document.getElementById('meta-base-dir').textContent = meta.pasta_base || 'Não especificada';
+      document.getElementById('meta-mode').textContent = meta.modo || 'Geral';
+      document.getElementById('meta-target').textContent = meta.alvo || 'Arquivos';
+      document.getElementById('meta-date').textContent = meta.data_inicio || 'Recente';
+
+      const filtersStr = `Positivos: ${meta.filtros_positivos || 'todos'} | Negativos: ${meta.filtros_negativos || 'nenhum'}`;
+      document.getElementById('meta-filters').textContent = filtersStr;
+
+      const termsContainer = document.getElementById('meta-terms');
+      if (meta.termos && meta.termos.length > 0) {
+        termsContainer.innerHTML = meta.termos.map(t => `<span class="badge badge-term">${escapeHtml(t)}</span>`).join('');
+      } else {
+        termsContainer.innerHTML = '<span class="badge">Nenhum termo</span>';
+      }
+    }
+
+    function resetFiltersAndPagination() {
+      appState.filterText = '';
+      appState.filterType = '';
+      appState.currentPage = 1;
+      appState.sortColumn = 'id';
+      appState.sortDirection = 'asc';
+
+      document.getElementById('filter-input').value = '';
+      document.getElementById('filter-type').value = '';
+      document.getElementById('clear-search-btn').style.display = 'none';
+      updateSortHeaders();
+    }
+
+    function onFilterChange() {
+      const input = document.getElementById('filter-input');
+      appState.filterText = input.value.trim().toLowerCase();
+      appState.filterType = document.getElementById('filter-type').value;
+      appState.currentPage = 1;
+
+      document.getElementById('clear-search-btn').style.display = appState.filterText ? 'block' : 'none';
+      applyFiltersAndSort();
+    }
+
+    function clearFilter() {
+      document.getElementById('filter-input').value = '';
+      onFilterChange();
+    }
+
+    function onPageSizeChange() {
+      const sel = document.getElementById('page-size-select');
+      appState.pageSize = sel.value === 'all' ? 'all' : parseInt(sel.value, 10);
+      appState.currentPage = 1;
+      applyFiltersAndSort();
+    }
+
+    // Filtragem e Ordenação em JS
+    function applyFiltersAndSort() {
+      if (!appState.currentReportData || !appState.currentReportData.rows) return;
+
+      let rows = [...appState.currentReportData.rows];
+
+      if (appState.filterType) {
+        rows = rows.filter(r => (r.tipo || '').toLowerCase().includes(appState.filterType));
+      }
+
+      if (appState.filterText) {
+        const query = appState.filterText;
+        rows = rows.filter(r => {
+          return (r.arquivo && r.arquivo.toLowerCase().includes(query)) ||
+                 (r.nome_arquivo && r.nome_arquivo.toLowerCase().includes(query)) ||
+                 (r.pasta && r.pasta.toLowerCase().includes(query)) ||
+                 (r.trecho && r.trecho.toLowerCase().includes(query)) ||
+                 (r.linha && r.linha.toString().includes(query)) ||
+                 (r.tipo && r.tipo.toLowerCase().includes(query)) ||
+                 (r.data_modificacao && r.data_modificacao.includes(query));
+        });
+      }
+
+      const col = appState.sortColumn;
+      const dir = appState.sortDirection === 'asc' ? 1 : -1;
+
+      rows.sort((a, b) => {
+        let valA = a[col];
+        let valB = b[col];
+
+        if (col === 'id' || col === 'linha_num' || col === 'tamanho_bytes') {
+          valA = Number(valA) || 0;
+          valB = Number(valB) || 0;
+          return (valA - valB) * dir;
+        }
+
+        valA = (valA || '').toString().toLowerCase();
+        valB = (valB || '').toString().toLowerCase();
+        return valA.localeCompare(valB) * dir;
+      });
+
+      appState.filteredRows = rows;
+
+      if (appState.pageSize === 'all') {
+        appState.displayRows = rows;
+      } else {
+        const start = (appState.currentPage - 1) * appState.pageSize;
+        appState.displayRows = rows.slice(start, start + appState.pageSize);
+      }
+
+      renderTable();
+      renderPagination();
+    }
+
+    function sortTable(column) {
+      if (appState.sortColumn === column) {
+        appState.sortDirection = appState.sortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        appState.sortColumn = column;
+        appState.sortDirection = 'asc';
+      }
+      updateSortHeaders();
+      applyFiltersAndSort();
+    }
+
+    function resetSorting() {
+      appState.sortColumn = 'id';
+      appState.sortDirection = 'asc';
+      updateSortHeaders();
+      applyFiltersAndSort();
+    }
+
+    function updateSortHeaders() {
+      const headers = ['arquivo', 'tipo', 'linha', 'tamanho', 'data', 'trecho'];
+      headers.forEach(h => {
+        const el = document.getElementById('th-' + h);
+        if (el) el.classList.remove('sort-asc', 'sort-desc');
+      });
+
+      const colMap = {
+        'arquivo': 'th-arquivo',
+        'tipo': 'th-tipo',
+        'linha_num': 'th-linha',
+        'tamanho_bytes': 'th-tamanho',
+        'data_modificacao': 'th-data',
+        'trecho': 'th-trecho'
+      };
+
+      const targetId = colMap[appState.sortColumn];
+      if (targetId) {
+        const el = document.getElementById(targetId);
+        if (el) el.classList.add(appState.sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+      }
+    }
+
+    // Renderizar Linhas da Tabela
+    function renderTable() {
+      const tbody = document.getElementById('table-body');
+      if (!tbody) return;
+
+      if (appState.filteredRows.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" style="text-align: center; padding: 40px; color: var(--text-muted);">
+              🔍 Nenhum resultado encontrado para os filtros informados.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = appState.displayRows.map(row => {
+        const safePath = escapeHtml(row.arquivo);
+        const fileName = escapeHtml(row.nome_arquivo || row.arquivo);
+        const dirPath = escapeHtml(row.pasta || '');
+        const kind = (row.tipo || 'arquivo').toLowerCase();
+        const lineDisplay = row.linha && row.linha !== '0' ? escapeHtml(row.linha) : '-';
+        const sizeDisplay = escapeHtml(row.tamanho_formatado || '-');
+        const dateDisplay = escapeHtml(row.data_modificacao || '-');
+        
+        let snippetHtml = '-';
+        if (row.trecho) {
+          snippetHtml = highlightTerms(row.trecho, appState.terms, appState.filterText);
+        }
+
+        let kindBadgeClass = 'badge-primary';
+        if (kind.includes('conteudo')) kindBadgeClass = 'badge-primary';
+        else if (kind.includes('diretorio')) kindBadgeClass = 'badge-term';
+        else kindBadgeClass = 'badge-count';
+
+        return `
+          <tr>
+            <td style="color: var(--text-muted); font-size: 0.8rem;">${row.id}</td>
+            <td style="max-width: 380px;">
+              <div class="file-title" title="${safePath}">${fileName}</div>
+              <div class="file-path" title="${safePath}">${dirPath}</div>
+            </td>
+            <td>
+              <span class="badge ${kindBadgeClass}">${escapeHtml(row.tipo || 'arquivo')}</span>
+            </td>
+            <td style="font-family: monospace; font-weight: 600;">${lineDisplay}</td>
+            <td style="white-space: nowrap;">${sizeDisplay}</td>
+            <td style="font-size: 0.82rem; color: var(--text-muted); white-space: nowrap;">${dateDisplay}</td>
+            <td style="max-width: 420px;">
+              <div class="snippet-box">${snippetHtml}</div>
+            </td>
+            <td>
+              <div style="display: flex; gap: 4px; flex-wrap: nowrap;">
+                <button class="btn btn-primary btn-sm" onclick="openFilePreview('${escapeJs(row.arquivo)}', ${row.linha_num || 0})" title="Visualizar arquivo no navegador">
+                  👁️ Visualizar
+                </button>
+                <button class="btn btn-outline btn-sm" onclick="openFileAction('${escapeJs(row.arquivo)}')" title="Abrir no programa padrão">
+                  📄
+                </button>
+                <button class="btn btn-success btn-sm" onclick="openFolderAction('${escapeJs(row.arquivo)}')" title="Abrir pasta no Explorer">
+                  📁
+                </button>
+                <button class="btn btn-outline btn-sm" onclick="copyPathAction('${escapeJs(row.arquivo)}')" title="Copiar caminho">
+                  📋
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function highlightTerms(text, searchTerms, filterQuery) {
+      if (!text) return '';
+      let escaped = escapeHtml(text);
+      const allTerms = [...(searchTerms || [])];
+      if (filterQuery) allTerms.push(filterQuery);
+
+      if (allTerms.length === 0) return escaped;
+
+      const sortedTerms = allTerms.filter(t => t && t.length > 0).sort((a, b) => b.length - a.length);
+
+      sortedTerms.forEach(term => {
+        const regex = new RegExp('(' + escapeRegExp(escapeHtml(term)) + ')', 'gi');
+        escaped = escaped.replace(regex, '<mark class="highlight">$1</mark>');
+      });
+
+      return escaped;
+    }
+
+    function renderPagination() {
+      const info = document.getElementById('pagination-info');
+      const controls = document.getElementById('pagination-controls');
+      if (!info || !controls) return;
+
+      const total = appState.filteredRows.length;
+      if (total === 0) {
+        info.textContent = '0 registros encontrados';
+        controls.innerHTML = '';
+        return;
+      }
+
+      if (appState.pageSize === 'all') {
+        info.textContent = `Exibindo todos os ${total} registros`;
+        controls.innerHTML = '';
+        return;
+      }
+
+      const totalPages = Math.ceil(total / appState.pageSize);
+      const start = (appState.currentPage - 1) * appState.pageSize + 1;
+      const end = Math.min(start + appState.pageSize - 1, total);
+
+      info.textContent = `Exibindo ${start} a ${end} de ${total} registros`;
+
+      let buttons = '';
+      buttons += `<button class="btn btn-outline btn-sm" onclick="goToPage(1)" ${appState.currentPage === 1 ? 'disabled' : ''}>«</button>`;
+      buttons += `<button class="btn btn-outline btn-sm" onclick="goToPage(${appState.currentPage - 1})" ${appState.currentPage === 1 ? 'disabled' : ''}>‹ Ant.</button>`;
+
+      const maxButtons = 5;
+      let startPage = Math.max(1, appState.currentPage - 2);
+      let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+      if (endPage - startPage < maxButtons - 1) {
+        startPage = Math.max(1, endPage - maxButtons + 1);
+      }
+
+      for (let p = startPage; p <= endPage; p++) {
+        const activeClass = p === appState.currentPage ? 'btn-primary' : 'btn-outline';
+        buttons += `<button class="btn ${activeClass} btn-sm" onclick="goToPage(${p})">${p}</button>`;
+      }
+
+      buttons += `<button class="btn btn-outline btn-sm" onclick="goToPage(${appState.currentPage + 1})" ${appState.currentPage === totalPages ? 'disabled' : ''}>Próx. ›</button>`;
+      buttons += `<button class="btn btn-outline btn-sm" onclick="goToPage(${totalPages})" ${appState.currentPage === totalPages ? 'disabled' : ''}>»</button>`;
+
+      controls.innerHTML = buttons;
+    }
+
+    function goToPage(page) {
+      const totalPages = Math.ceil(appState.filteredRows.length / appState.pageSize);
+      if (page < 1 || page > totalPages) return;
+      appState.currentPage = page;
+      applyFiltersAndSort();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // Modal de Nova Busca
+    function openNewSearchModal() {
+      openModal('modalNewSearch');
+      document.getElementById('search-form-alert').style.display = 'none';
+      switchSearchTab('db');
+      setTimeout(() => {
+        const termsInput = document.getElementById('search-terms');
+        if (termsInput) termsInput.focus();
+      }, 100);
+    }
+
+    function switchSearchTab(type) {
+      appState.activeSearchType = type;
+      const btnDisk = document.getElementById('tab-btn-disk');
+      const btnDb = document.getElementById('tab-btn-db');
+      const fieldDir = document.getElementById('field-base-dir');
+      const fieldMode = document.getElementById('field-mode');
+
+      if (type === 'db') {
+        btnDb.classList.add('active');
+        btnDisk.classList.remove('active');
+        fieldDir.style.display = 'none';
+        fieldMode.style.display = 'none';
+      } else {
+        btnDisk.classList.add('active');
+        btnDb.classList.remove('active');
+        fieldDir.style.display = 'block';
+        fieldMode.style.display = 'block';
+      }
+    }
+
+    async function submitNewSearch(e) {
+      e.preventDefault();
+      const termsRaw = document.getElementById('search-terms').value.trim();
+      if (!termsRaw) {
+        showToast('Informe ao menos um termo de busca', 'error');
+        return;
+      }
+
+      const terms = termsRaw.split(';').map(t => t.trim()).filter(t => t.length > 0);
+      const posFilter = document.getElementById('search-pos-filter').value.split(';').map(t => t.trim()).filter(t => t.length > 0);
+      const negFilter = document.getElementById('search-neg-filter').value.split(';').map(t => t.trim()).filter(t => t.length > 0);
+
+      const baseDirVal = document.getElementById('search-base-dir').value.trim() || '.';
+      localStorage.setItem('bt_last_base_dir', baseDirVal);
+
+      const payload = {
+        type: appState.activeSearchType,
+        baseDir: baseDirVal,
+        terms: terms,
+        mode: parseInt(document.getElementById('search-mode').value, 10),
+        targetType: parseInt(document.getElementById('search-target').value, 10),
+        posFilter: posFilter,
+        negFilter: negFilter,
+        matchingMode: document.getElementById('search-matching').value
+      };
+
+      try {
+        const res = await fetch('/api/search/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Erro ao iniciar busca');
+
+        closeModal('modalNewSearch');
+        showToast('🚀 Busca iniciada em segundo plano!', 'success');
+        startProgressMonitoring();
+      } catch (err) {
+        const alertEl = document.getElementById('search-form-alert');
+        alertEl.className = 'mensagem erro';
+        alertEl.textContent = 'Erro: ' + err.message;
+        alertEl.style.display = 'block';
+      }
+    }
+
+    // Monitoramento da Busca em Tempo Real
+    function startProgressMonitoring() {
+      const widget = document.getElementById('live-search-widget');
+      widget.classList.add('active');
+
+      if (appState.progressInterval) clearInterval(appState.progressInterval);
+
+      appState.progressInterval = setInterval(async () => {
+        try {
+          const res = await fetch('/api/search/status');
+          if (!res.ok) return;
+          const status = await res.json();
+
+          document.getElementById('progress-scanned-count').textContent = status.scannedFiles || 0;
+          document.getElementById('progress-matches-count').textContent = status.matchesCount || 0;
+          document.getElementById('progress-elapsed-time').textContent = (status.elapsedMs / 1000).toFixed(1) + 's';
+
+          if (status.finished || !status.active) {
+            clearInterval(appState.progressInterval);
+            appState.progressInterval = null;
+            widget.classList.remove('active');
+
+            if (status.error) {
+              showToast('Busca finalizada com aviso: ' + status.error, 'error');
+            } else {
+              showToast(`✓ Busca concluída! ${status.matchesCount} ocorrências encontradas.`, 'success');
+            }
+
+            // Recarrega relatórios e abre o novo relatório gerado
+            await fetchReportsList(status.reportFile);
+          }
+        } catch (err) {
+          console.error('Erro ao monitorar status:', err);
+        }
+      }, 500);
+    }
+
+    async function checkActiveSearch() {
+      try {
+        const res = await fetch('/api/search/status');
+        if (res.ok) {
+          const status = await res.json();
+          if (status.active) {
+            startProgressMonitoring();
+          }
+        }
+      } catch (e) {}
+    }
+
+    async function cancelActiveSearch() {
+      try {
+        await fetch('/api/search/cancel', { method: 'POST' });
+        showToast('Solicitação de cancelamento enviada.', 'info');
+      } catch (e) {}
+    }
+
+    // VISUALIZADOR / PREVIEW INTEGRADO NO NAVEGADOR
+    async function openFilePreview(filePath, highlightLine = 0) {
+      appState.previewCurrentPath = filePath;
+      openModal('modalPreview');
+
+      const titleEl = document.getElementById('preview-file-title');
+      const iconEl = document.getElementById('preview-icon');
+      const pathEl = document.getElementById('preview-path');
+      const sizeEl = document.getElementById('preview-size');
+      const dateEl = document.getElementById('preview-date');
+      const codeBox = document.getElementById('preview-code-box');
+      const codeBody = document.getElementById('preview-code-body');
+      const mediaBox = document.getElementById('preview-media-box');
+      const binaryBox = document.getElementById('preview-binary-box');
+      const btnCopy = document.getElementById('btn-copy-preview');
+
+      codeBox.style.display = 'none';
+      mediaBox.style.display = 'none';
+      binaryBox.style.display = 'none';
+      codeBody.innerHTML = '';
+      mediaBox.innerHTML = '';
+      pathEl.textContent = filePath;
+      titleEl.textContent = getFileName(filePath);
+
+      try {
+        const res = await fetch(`/api/preview?path=${encodeURIComponent(filePath)}&line=${highlightLine}`);
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || 'Não foi possível carregar o arquivo');
+        }
+
+        const data = await res.json();
+        titleEl.textContent = data.fileName;
+        sizeEl.textContent = data.sizeFormatted;
+        dateEl.textContent = data.modTime;
+        appState.previewRawContent = data.content || '';
+
+        if (data.category === 'code' || data.category === 'text') {
+          iconEl.textContent = '📄';
+          btnCopy.style.display = 'inline-flex';
+          codeBox.style.display = 'block';
+
+          let rowsHtml = '';
+          (data.lines || []).forEach((lineText, idx) => {
+            const lineNum = idx + 1;
+            const isHit = (lineNum === highlightLine);
+            const lineClass = isHit ? 'code-line-highlight' : '';
+            const lineId = `preview-line-${lineNum}`;
+
+            let highlightedText = escapeHtml(lineText);
+            if (appState.terms && appState.terms.length > 0) {
+              highlightedText = highlightTerms(lineText, appState.terms, '');
+            }
+
+            rowsHtml += `
+              <tr class="${lineClass}" id="${lineId}">
+                <td class="code-line-num">${lineNum}</td>
+                <td class="code-line-content">${highlightedText || ' '}</td>
+              </tr>
+            `;
+          });
+
+          codeBody.innerHTML = rowsHtml;
+
+          // Rola automaticamente para a linha destacada
+          if (highlightLine > 0) {
+            setTimeout(() => {
+              const targetEl = document.getElementById(`preview-line-${highlightLine}`);
+              if (targetEl) {
+                targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }, 100);
+          }
+        } else if (data.category === 'image') {
+          iconEl.textContent = '🖼️';
+          btnCopy.style.display = 'none';
+          mediaBox.style.display = 'flex';
+          mediaBox.innerHTML = `<img src="${data.rawUrl}" alt="${escapeHtml(data.fileName)}">`;
+        } else if (data.category === 'audio') {
+          iconEl.textContent = '🎵';
+          btnCopy.style.display = 'none';
+          mediaBox.style.display = 'flex';
+          mediaBox.innerHTML = `<audio controls autoplay src="${data.rawUrl}" style="width: 100%; max-width: 500px;"></audio>`;
+        } else if (data.category === 'video') {
+          iconEl.textContent = '🎬';
+          btnCopy.style.display = 'none';
+          mediaBox.style.display = 'flex';
+          mediaBox.innerHTML = `<video controls autoplay src="${data.rawUrl}"></video>`;
+        } else if (data.category === 'pdf') {
+          iconEl.textContent = '📑';
+          btnCopy.style.display = 'none';
+          mediaBox.style.display = 'flex';
+          mediaBox.innerHTML = `<iframe src="${data.rawUrl}"></iframe>`;
+        } else {
+          iconEl.textContent = '📦';
+          btnCopy.style.display = 'none';
+          binaryBox.style.display = 'block';
+        }
+      } catch (err) {
+        showToast('Erro ao carregar preview: ' + err.message, 'error');
+        binaryBox.style.display = 'block';
+        binaryBox.innerHTML = `<p style="color: var(--color-danger);">⚠️ ${escapeHtml(err.message)}</p>`;
+      }
+    }
+
+    function openPreviewInSystem() {
+      if (appState.previewCurrentPath) {
+        openFileAction(appState.previewCurrentPath);
+      }
+    }
+
+    function openPreviewFolder() {
+      if (appState.previewCurrentPath) {
+        openFolderAction(appState.previewCurrentPath);
+      }
+    }
+
+    function copyPreviewContent() {
+      if (appState.previewRawContent) {
+        navigator.clipboard.writeText(appState.previewRawContent).then(() => {
+          showToast('✓ Conteúdo copiado para a área de transferência!', 'success');
+        });
+      }
+    }
+
+    // Ações do Sistema Operacional
+    async function openFileAction(filePath) {
+      showToast('Abrindo: ' + getFileName(filePath) + '...', 'info');
+      try {
+        const res = await fetch('/api/open-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: filePath })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✓ Arquivo aberto no programa padrão!', 'success');
+        } else {
+          showToast('Erro: ' + (data.error || 'Desconhecido'), 'error');
+        }
+      } catch (err) {
+        showToast('Erro de requisição: ' + err.message, 'error');
+      }
+    }
+
+    async function openFolderAction(filePath) {
+      showToast('Abrindo pasta no Explorer...', 'info');
+      try {
+        const res = await fetch('/api/open-folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: filePath })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✓ Pasta aberta com sucesso no Explorer!', 'success');
+        } else {
+          showToast('Erro: ' + (data.error || 'Desconhecido'), 'error');
+        }
+      } catch (err) {
+        showToast('Erro de requisição: ' + err.message, 'error');
+      }
+    }
+
+    function copyPathAction(filePath) {
+      navigator.clipboard.writeText(filePath).then(() => {
+        showToast('✓ Caminho copiado com sucesso!', 'success');
+      });
+    }
+
+    function downloadCurrentCSV() {
+      if (!appState.currentFileName) return;
+      window.open('/api/download?file=' + encodeURIComponent(appState.currentFileName), '_blank');
+    }
+
+    // Toasts
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+
+      const toast = document.createElement('div');
+      toast.className = 'toast toast-' + type;
+      toast.textContent = message;
+
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        toast.style.transition = 'all 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // Utilitários
+    function escapeHtml(text) {
+      if (text === null || text === undefined) return '';
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function escapeJs(text) {
+      if (text === null || text === undefined) return '';
+      return String(text).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+    }
+
+    function escapeRegExp(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function getFileName(path) {
+      if (!path) return '';
+      const parts = path.split(/[\\/]/);
+      return parts[parts.length - 1];
+    }
+  </script>
+</body>
+</html>
