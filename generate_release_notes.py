@@ -142,8 +142,17 @@ def load_config():
 
 
 def get_git_commits(limit=30):
-    """Obtem o historico recente de commits do Git."""
+    """Obtem o historico recente de commits do Git, priorizando commits desde a ultima tag."""
     try:
+        tags_cmd = ["git", "describe", "--tags", "--abbrev=0"]
+        tag_res = subprocess.run(tags_cmd, capture_output=True, text=True, encoding="utf-8", cwd=SCRIPT_DIR)
+        if tag_res.returncode == 0 and tag_res.stdout.strip():
+            last_tag = tag_res.stdout.strip()
+            cmd = ["git", "log", f"{last_tag}..HEAD", "--pretty=format:* %s (%ad)", "--date=short"]
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", cwd=SCRIPT_DIR)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+
         cmd = [
             "git",
             "log",
@@ -178,9 +187,8 @@ def generate_notes_with_ai(version_label, commits, config):
     if not api_key or api_key in ("SEU_API_KEY_AQUI", "YOUR_API_KEY_HERE"):
         raise ValueError("Chave de API nao configurada no release_ai_config.json")
 
-    app_name = config.get("app_name", "Application")
+    app_name = config.get("app_name", "BuscaTextual")
     app_desc = config.get("app_description", "").strip()
-    desc_clause = f" ({app_desc})" if app_desc else ""
 
     custom_prompt = config.get("custom_prompt", "").strip()
     if custom_prompt:
@@ -194,21 +202,33 @@ def generate_notes_with_ai(version_label, commits, config):
         except Exception:
             prompt = custom_prompt
     else:
-        prompt = f"""Você é um assistente de engenharia de software criando Release Notes (Notas de Lançamento) para o aplicativo {app_name}{desc_clause}.
+        app_context = f"o aplicativo **{app_name}**"
+        if app_desc:
+            app_context += f" ({app_desc})"
+        else:
+            app_context += " (um buscador ultrarrápido de arquivos e conteúdos em Go para Windows, com terminal interativo e dashboard web moderno)"
 
-Abaixo está o histórico dos últimos commits do projeto:
+        prompt = f"""Você é um especialista em engenharia de software criando Release Notes (Notas de Lançamento) elegantes, empolgantes e profissionais para {app_context}.
+
+Abaixo estão as alterações e commits mais recentes do projeto:
 {commits}
 
-Tarefa:
-Gere uma descrição resumida, profissional e organizada em Markdown para o lançamento da versão **{version_label}**.
-- Destaque as principais melhorias, novos recursos e correções de bugs.
-- Agrupe em tópicos objetivos (ex: 🚀 Novidades e Recursos, 🎨 Interface e Usabilidade, 🛠️ Correções e Melhorias).
-- Seja direto e amigável para o usuário final. Não mencione hashes de commit.
-- Responda apenas com o conteúdo em Markdown (sem blocos ```markdown envolvendo todo o texto)."""
+Instruções para as Release Notes da versão **{version_label}**:
+1. Crie uma introdução curta e envolvente destacando as principais conquistas e o foco desta versão.
+2. Agrupe as mudanças de forma inteligente e descritiva em seções claras com emojis (por exemplo:
+   - 🚀 Novidades e Funcionalidades
+   - 🎨 Interface Web & Experiência do Usuário
+   - ⚡ Performance, Estabilidade e Correções
+   - 🛠️ Melhorias Técnicas e Refatorações
+3. Não liste commits mecanicamente; sintetize o valor real que cada mudança traz para quem usa o sistema.
+4. Use formatação limpa e moderna em Markdown (negrito para pontos-chave, listas com marcadores organizadas).
+5. Linguagem em português do Brasil, tom profissional, amigável e direto ao ponto.
+6. Retorne APENAS o conteúdo em Markdown formatado (sem blocos ```markdown envolvendo todo o texto)."""
 
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
 
     payload = {
@@ -268,12 +288,47 @@ def check_release_exists(tag, repo=None):
     return res.returncode == 0
 
 
-def publish_github_release(tag, title, notes_path, config, draft=False, prerelease=False):
+def push_git_commits():
+    """Envia os commits locais para o repositorio remoto no GitHub antes de publicar a release."""
+    print("\n[Git] Enviando commits locais para o GitHub (git push)...")
+    res = subprocess.run(["git", "push"], capture_output=True, text=True, encoding="utf-8", cwd=SCRIPT_DIR)
+    output = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()
+
+    if res.returncode == 0:
+        print("[OK] Commits enviados para o GitHub com sucesso!")
+        if output:
+            for line in output.splitlines():
+                print(f"  {line}")
+        return True
+
+    # Se falhou por falta de upstream no branch atual, tenta configurar
+    branch_res = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, encoding="utf-8", cwd=SCRIPT_DIR)
+    current_branch = branch_res.stdout.strip() if branch_res.returncode == 0 else "master"
+
+    res_upstream = subprocess.run(["git", "push", "-u", "origin", current_branch], capture_output=True, text=True, encoding="utf-8", cwd=SCRIPT_DIR)
+    upstream_output = ((res_upstream.stdout or "") + "\n" + (res_upstream.stderr or "")).strip()
+
+    if res_upstream.returncode == 0:
+        print(f"[OK] Commits enviados para origin/{current_branch} com sucesso!")
+        if upstream_output:
+            for line in upstream_output.splitlines():
+                print(f"  {line}")
+        return True
+    else:
+        err = upstream_output or output
+        print(f"[Aviso] Nao foi possivel executar o git push automaticamente:\n{err}")
+        return False
+
+
+def publish_github_release(tag, title, notes_path, config, draft=False, prerelease=False, do_push=True):
     """Cria ou atualiza a release no GitHub e faz upload dos arquivos binarios usando gh CLI."""
     if not check_gh_installed():
         print("[Erro] O utilitario GitHub CLI ('gh') nao foi encontrado no sistema.")
         print("Instale o GitHub CLI ou verifique o PATH: https://cli.github.com/")
         return False
+
+    if do_push:
+        push_git_commits()
 
     repo = config.get("github_repo", "").strip()
     assets = get_available_assets(config)
@@ -389,6 +444,7 @@ def main():
     parser.add_argument("--prerelease", action="store_true", help="Publica como pre-release.")
     parser.add_argument("--cleanup-only", action="store_true", help="Apenas executa a limpeza de releases antigas.")
     parser.add_argument("--no-cleanup", action="store_true", help="Nao executa limpeza de releases antigas apos publicar.")
+    parser.add_argument("--no-push", action="store_true", help="Nao executa git push antes de publicar a release.")
 
     args = parser.parse_args()
     config = load_config()
@@ -466,6 +522,7 @@ def main():
             config=config,
             draft=args.draft,
             prerelease=args.prerelease,
+            do_push=not args.no_push,
         )
         if published and not args.no_cleanup:
             cleanup_old_releases(cleanup_keep, repo=repo)

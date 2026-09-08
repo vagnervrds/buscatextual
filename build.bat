@@ -28,8 +28,8 @@ echo  Escolha a operacao desejada:
 echo.
 echo   [1] Apenas Gerar Build (compilar buscatextual.exe)
 echo   [2] Apenas Gerar Release Notes (generate_release_notes.py)
-echo   [3] Apenas Gerar e Publicar Release no GitHub (--publish)
-echo   [4] Fazer Ambos (Gerar Build + Publicar Release no GitHub)
+echo   [3] Publicar Release no GitHub (git push + release)
+echo   [4] Fazer Ambos (Build + git push + Publicar Release no GitHub)
 echo   [0] Cancelar e Sair
 echo.
 echo ============================================================
@@ -91,7 +91,7 @@ rem -------------------------------------------------------------
 :opt_publish
 echo.
 echo ============================================================
-echo           [1/1] GERANDO E PUBLICANDO RELEASE
+echo      [1/1] PUBLICANDO COMMITS E RELEASE NO GITHUB
 echo ============================================================
 if "%PYTHON_CMD%"=="" goto :err_no_python
 %PYTHON_CMD% generate_release_notes.py --publish
@@ -144,7 +144,7 @@ if not "%DO_AFTER_BUILD%"=="publish" goto :finish
 
 echo.
 echo ============================================================
-echo          [2/2] GERANDO E PUBLICANDO RELEASE NO GITHUB
+echo     [2/2] PUBLICANDO COMMITS E RELEASE NO GITHUB
 echo ============================================================
 if "%PYTHON_CMD%"=="" goto :err_no_python
 %PYTHON_CMD% generate_release_notes.py --publish

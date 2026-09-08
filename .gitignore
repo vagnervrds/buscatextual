@@ -11,3 +11,5 @@ teste_cli/
 build_release.bat
 release_ai_config.json
 release_notes.txt
+__pycache__/
+*.pyc
