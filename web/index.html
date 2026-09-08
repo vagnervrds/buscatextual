@@ -541,8 +541,13 @@
     .search-box {
       position: relative;
       flex: 1;
-      min-width: 260px;
-      max-width: 480px;
+      min-width: 220px;
+      max-width: 440px;
+    }
+
+    .search-box-negative input:focus {
+      border-color: var(--color-danger);
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
     }
 
     .search-box input {
@@ -1218,6 +1223,12 @@
             <button id="clear-search-btn" class="clear-search-btn" onclick="clearFilter()">✕</button>
           </div>
 
+          <div class="search-box search-box-negative">
+            <span class="search-icon" style="opacity: 0.75;">🚫</span>
+            <input type="text" id="filter-negative-input" placeholder="Filtro negativo (excluir termos)..." oninput="onFilterChange()" autocomplete="off" title="Excluir linhas que contenham estes termos (separe por vírgula)">
+            <button id="clear-negative-search-btn" class="clear-search-btn" onclick="clearNegativeFilter()">✕</button>
+          </div>
+
           <div class="filter-group">
             <select id="filter-type" onchange="onFilterChange()" title="Filtrar por tipo">
               <option value="">Todos os Tipos</option>
@@ -1423,6 +1434,7 @@
       filteredRows: [],
       displayRows: [],
       filterText: '',
+      filterNegativeText: '',
       filterType: '',
       sortColumn: 'id',
       sortDirection: 'asc',
@@ -1677,29 +1689,47 @@
 
     function resetFiltersAndPagination() {
       appState.filterText = '';
+      appState.filterNegativeText = '';
       appState.filterType = '';
       appState.currentPage = 1;
       appState.sortColumn = 'id';
       appState.sortDirection = 'asc';
 
       document.getElementById('filter-input').value = '';
+      const negInput = document.getElementById('filter-negative-input');
+      if (negInput) negInput.value = '';
+
       document.getElementById('filter-type').value = '';
       document.getElementById('clear-search-btn').style.display = 'none';
+      const clearNegBtn = document.getElementById('clear-negative-search-btn');
+      if (clearNegBtn) clearNegBtn.style.display = 'none';
+
       updateSortHeaders();
     }
 
     function onFilterChange() {
       const input = document.getElementById('filter-input');
+      const negInput = document.getElementById('filter-negative-input');
       appState.filterText = input.value.trim().toLowerCase();
+      appState.filterNegativeText = negInput ? negInput.value.trim().toLowerCase() : '';
       appState.filterType = document.getElementById('filter-type').value;
       appState.currentPage = 1;
 
       document.getElementById('clear-search-btn').style.display = appState.filterText ? 'block' : 'none';
+      const clearNegBtn = document.getElementById('clear-negative-search-btn');
+      if (clearNegBtn) clearNegBtn.style.display = appState.filterNegativeText ? 'block' : 'none';
+
       applyFiltersAndSort();
     }
 
     function clearFilter() {
       document.getElementById('filter-input').value = '';
+      onFilterChange();
+    }
+
+    function clearNegativeFilter() {
+      const negInput = document.getElementById('filter-negative-input');
+      if (negInput) negInput.value = '';
       onFilterChange();
     }
 
@@ -1720,6 +1750,7 @@
         rows = rows.filter(r => (r.tipo || '').toLowerCase().includes(appState.filterType));
       }
 
+      // Filtro Positivo (deve conter a busca)
       if (appState.filterText) {
         const query = appState.filterText;
         rows = rows.filter(r => {
@@ -1731,6 +1762,30 @@
                  (r.tipo && r.tipo.toLowerCase().includes(query)) ||
                  (r.data_modificacao && r.data_modificacao.includes(query));
         });
+      }
+
+      // Filtro Negativo (exclui itens que contenham qualquer um dos termos)
+      if (appState.filterNegativeText) {
+        const negTerms = appState.filterNegativeText
+          .split(/[,;]+/)
+          .map(t => t.trim().toLowerCase())
+          .filter(t => t.length > 0);
+
+        if (negTerms.length > 0) {
+          rows = rows.filter(r => {
+            const combined = [
+              r.arquivo,
+              r.nome_arquivo,
+              r.pasta,
+              r.trecho,
+              r.linha ? r.linha.toString() : '',
+              r.tipo,
+              r.data_modificacao
+            ].filter(Boolean).join(' ').toLowerCase();
+
+            return !negTerms.some(term => combined.includes(term));
+          });
+        }
       }
 
       const col = appState.sortColumn;
@@ -2289,7 +2344,12 @@
 
     function escapeJs(text) {
       if (text === null || text === undefined) return '';
-      return String(text).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+      return String(text)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r');
     }
 
     function escapeRegExp(string) {

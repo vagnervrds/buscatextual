@@ -92,7 +92,7 @@ def load_config():
         "app_name": meta.get("name", "Application"),
         "app_description": meta.get("description", ""),
         "github_repo": detected_repo,
-        "api_url": "http://127.0.0.1:8045/v1/chat/completions",
+        "api_url": "https://api.openai.com/v1/chat/completions",
         "api_key": "",
         "model_name": "gemini-2.5-flash",
         "temperature": 0.3,
@@ -241,6 +241,11 @@ Gere uma descrição resumida, profissional e organizada em Markdown para o lan�
 def get_available_assets(config):
     """Identifica quais arquivos binarios/assets definidos na config estao disponiveis."""
     asset_paths = config.get("asset_paths", [])
+    if not asset_paths:
+        default_exe = os.path.join(SCRIPT_DIR, "buscatextual.exe")
+        if os.path.exists(default_exe):
+            return [default_exe]
+
     valid_assets = []
     for rel_path in asset_paths:
         full_path = os.path.join(SCRIPT_DIR, rel_path)
