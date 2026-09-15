@@ -287,6 +287,24 @@ type RemoteBuildInfo struct {
 	Build int `json:"build"`
 }
 
+type RemoteReleaseInfo struct {
+	TagName string `json:"tag_name"`
+}
+
+func parseBuildFromTag(tag string) int {
+	digits := ""
+	for _, ch := range tag {
+		if ch >= '0' && ch <= '9' {
+			digits += string(ch)
+		}
+	}
+	if digits != "" {
+		n, _ := strconv.Atoi(digits)
+		return n
+	}
+	return 0
+}
+
 func getLocalBuildNumber() int {
 	cleanVer := strings.TrimSpace(BuildVersion)
 	num, err := strconv.Atoi(cleanVer)
@@ -298,15 +316,23 @@ func getLocalBuildNumber() int {
 
 func checkUpdate() (hasUpdate bool, remoteBuild int, err error) {
 	client := &http.Client{Timeout: 10 * time.Second}
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 	urls := []string{
-		"https://raw.githubusercontent.com/vagnervrds/buscatextual/master/build.json",
-		"https://raw.githubusercontent.com/vagnervrds/buscatextual/main/build.json",
+		"https://raw.githubusercontent.com/vagnervrds/buscatextual/master/build.json?t=" + timestamp,
+		"https://raw.githubusercontent.com/vagnervrds/buscatextual/main/build.json?t=" + timestamp,
 	}
 
 	var resp *http.Response
 	var lastErr error
 	for _, url := range urls {
-		r, err := client.Get(url)
+		req, reqErr := http.NewRequest("GET", url, nil)
+		if reqErr != nil {
+			continue
+		}
+		req.Header.Set("Cache-Control", "no-cache")
+		req.Header.Set("Pragma", "no-cache")
+
+		r, err := client.Do(req)
 		if err == nil && r.StatusCode == http.StatusOK {
 			resp = r
 			break
@@ -321,33 +347,53 @@ func checkUpdate() (hasUpdate bool, remoteBuild int, err error) {
 		}
 	}
 
-	if resp == nil {
+	maxRemote := 0
+
+	if resp != nil {
+		defer resp.Body.Close()
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err == nil {
+			bodyBytes = bytes.TrimPrefix(bodyBytes, []byte{0xEF, 0xBB, 0xBF})
+			var remoteInfo RemoteBuildInfo
+			if err := json.Unmarshal(bodyBytes, &remoteInfo); err == nil {
+				maxRemote = remoteInfo.Build
+			}
+		}
+	}
+
+	// Consulta tambem a API de releases do GitHub para obter a versao da tag mais recente
+	relReq, relErr := http.NewRequest("GET", "https://api.github.com/repos/vagnervrds/buscatextual/releases/latest", nil)
+	if relErr == nil {
+		relReq.Header.Set("User-Agent", "BuscaTextual-Updater")
+		relReq.Header.Set("Accept", "application/vnd.github.v3+json")
+		relResp, relErr2 := client.Do(relReq)
+		if relErr2 == nil && relResp.StatusCode == http.StatusOK {
+			defer relResp.Body.Close()
+			var relInfo RemoteReleaseInfo
+			if err := json.NewDecoder(relResp.Body).Decode(&relInfo); err == nil {
+				relBuild := parseBuildFromTag(relInfo.TagName)
+				if relBuild > maxRemote {
+					maxRemote = relBuild
+				}
+			}
+		} else if relResp != nil {
+			relResp.Body.Close()
+		}
+	}
+
+	if maxRemote == 0 {
 		if lastErr != nil {
 			return false, 0, fmt.Errorf("falha ao conectar ao GitHub: %v", lastErr)
 		}
 		return false, 0, fmt.Errorf("nao foi possivel obter o arquivo de versao do GitHub")
 	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return false, 0, fmt.Errorf("falha ao ler resposta do GitHub: %v", err)
-	}
-
-	// Remove UTF-8 BOM (Byte Order Mark) se presente
-	bodyBytes = bytes.TrimPrefix(bodyBytes, []byte{0xEF, 0xBB, 0xBF})
-
-	var remoteInfo RemoteBuildInfo
-	if err := json.Unmarshal(bodyBytes, &remoteInfo); err != nil {
-		return false, 0, fmt.Errorf("falha ao decodificar JSON de versao: %v", err)
-	}
 
 	localBuild := getLocalBuildNumber()
-	if remoteInfo.Build > localBuild {
-		return true, remoteInfo.Build, nil
+	if maxRemote > localBuild {
+		return true, maxRemote, nil
 	}
 
-	return false, remoteInfo.Build, nil
+	return false, maxRemote, nil
 }
 
 type progressWriter struct {
@@ -378,11 +424,11 @@ func downloadAndUpdate(remoteBuild int) error {
 	}
 
 	urls := []string{
+		"https://github.com/vagnervrds/buscatextual/releases/latest/download/buscatextual.exe",
 		"https://raw.githubusercontent.com/vagnervrds/buscatextual/master/buscatextual.exe",
 		"https://github.com/vagnervrds/buscatextual/raw/master/buscatextual.exe",
 		"https://raw.githubusercontent.com/vagnervrds/buscatextual/main/buscatextual.exe",
 		"https://github.com/vagnervrds/buscatextual/raw/main/buscatextual.exe",
-		"https://github.com/vagnervrds/buscatextual/releases/latest/download/buscatextual.exe",
 	}
 
 	var resp *http.Response
@@ -468,7 +514,7 @@ func realizarChecagemAtualizacao(reader *bufio.Reader) {
 	fmt.Println(Bold + " Checando Atualizacoes no GitHub..." + Reset)
 	fmt.Println(Bold + ThemeCyan + "==================================================" + Reset)
 
-	downloadURL := "https://raw.githubusercontent.com/vagnervrds/buscatextual/master/buscatextual.exe"
+	downloadURL := "https://github.com/vagnervrds/buscatextual/releases/latest/download/buscatextual.exe"
 
 	localBuild := getLocalBuildNumber()
 	fmt.Printf(" Versao/Build Local: %s%s%s (build %d)\n", Bold+ThemeGreen, BuildVersion, Reset, localBuild)

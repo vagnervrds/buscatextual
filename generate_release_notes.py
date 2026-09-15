@@ -288,8 +288,32 @@ def check_release_exists(tag, repo=None):
     return res.returncode == 0
 
 
-def push_git_commits():
+def commit_pending_release_files(build_num=None):
+    """Garante que build.json e o executavel gerado sejam commitados antes do push."""
+    try:
+        files_to_check = ["build.json", "buscatextual.exe"]
+        status_cmd = ["git", "status", "--porcelain"] + files_to_check
+        res = subprocess.run(status_cmd, capture_output=True, text=True, encoding="utf-8", cwd=SCRIPT_DIR)
+        if res.returncode == 0 and res.stdout.strip():
+            print("\n[Git] Modificacoes detectadas em arquivos de release (build.json/buscatextual.exe).")
+            print("[Git] Criando commit automatico de release...")
+            subprocess.run(["git", "add"] + files_to_check, capture_output=True, cwd=SCRIPT_DIR)
+            ver_str = f"build {build_num}" if build_num else "new build"
+            commit_msg = f"chore(release): bump {ver_str}"
+            commit_res = subprocess.run(["git", "commit", "-m", commit_msg], capture_output=True, text=True, encoding="utf-8", cwd=SCRIPT_DIR)
+            if commit_res.returncode == 0:
+                print(f"[OK] Commit automatico criado: {commit_msg}")
+            else:
+                err_msg = (commit_res.stderr or commit_res.stdout or "").strip()
+                if err_msg:
+                    print(f"[Aviso] Nao foi possivel criar o commit: {err_msg}")
+    except Exception as e:
+        print(f"[Aviso] Falha ao verificar/commitar arquivos de release: {e}")
+
+
+def push_git_commits(build_num=None):
     """Envia os commits locais para o repositorio remoto no GitHub antes de publicar a release."""
+    commit_pending_release_files(build_num=build_num)
     print("\n[Git] Enviando commits locais para o GitHub (git push)...")
     res = subprocess.run(["git", "push"], capture_output=True, text=True, encoding="utf-8", cwd=SCRIPT_DIR)
     output = ((res.stdout or "") + "\n" + (res.stderr or "")).strip()
@@ -320,7 +344,7 @@ def push_git_commits():
         return False
 
 
-def publish_github_release(tag, title, notes_path, config, draft=False, prerelease=False, do_push=True):
+def publish_github_release(tag, title, notes_path, config, draft=False, prerelease=False, do_push=True, build_num=None):
     """Cria ou atualiza a release no GitHub e faz upload dos arquivos binarios usando gh CLI."""
     if not check_gh_installed():
         print("[Erro] O utilitario GitHub CLI ('gh') nao foi encontrado no sistema.")
@@ -328,7 +352,7 @@ def publish_github_release(tag, title, notes_path, config, draft=False, prerelea
         return False
 
     if do_push:
-        push_git_commits()
+        push_git_commits(build_num=build_num)
 
     repo = config.get("github_repo", "").strip()
     assets = get_available_assets(config)
@@ -523,6 +547,7 @@ def main():
             draft=args.draft,
             prerelease=args.prerelease,
             do_push=not args.no_push,
+            build_num=build_num,
         )
         if published and not args.no_cleanup:
             cleanup_old_releases(cleanup_keep, repo=repo)
