@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,98 @@ import (
 
 	"go.etcd.io/bbolt"
 )
+
+func TestSortModeDB(t *testing.T) {
+	tmpDB := filepath.Join(t.TempDir(), "test_sortmode.db")
+	oldDB := db
+	defer func() { db = oldDB }()
+
+	var err error
+	db, err = initTestDB(tmpDB)
+	if err != nil {
+		t.Fatalf("Erro ao inicializar DB de teste: %v", err)
+	}
+	defer db.Close()
+
+	// Padrão deve ser SortByFolder (1)
+	sortDefault := getSortMode()
+	if sortDefault != SortByFolder {
+		t.Errorf("SortMode padrão esperado SortByFolder (1), obtido %d", sortDefault)
+	}
+
+	// Testar salvar e recuperar cada modo válido
+	validModes := []SortMode{
+		SortBySizeDesc,
+		SortBySizeAsc,
+		SortByDateDesc,
+		SortByDateAsc,
+		SortByFolder,
+	}
+
+	for _, m := range validModes {
+		if err := saveSortMode(m); err != nil {
+			t.Fatalf("Erro ao salvar sortMode %d: %v", m, err)
+		}
+		if saved := getSortMode(); saved != m {
+			t.Errorf("SortMode esperado %d, obtido %d", m, saved)
+		}
+	}
+
+	// Testar valor inválido
+	if err := saveSortMode(0); err == nil {
+		t.Errorf("Esperava erro ao salvar modo de ordenacao 0, mas obteve nil")
+	}
+	if err := saveSortMode(6); err == nil {
+		t.Errorf("Esperava erro ao salvar modo de ordenacao 6, mas obteve nil")
+	}
+}
+
+func TestPromptSortMode(t *testing.T) {
+	tmpDB := filepath.Join(t.TempDir(), "test_prompt_sort.db")
+	oldDB := db
+	defer func() { db = oldDB }()
+
+	var err error
+	db, err = initTestDB(tmpDB)
+	if err != nil {
+		t.Fatalf("Erro ao inicializar DB de teste: %v", err)
+	}
+	defer db.Close()
+
+	// 1. Simular escolha da opção "4" (SortByDateDesc)
+	r1 := bufio.NewReader(strings.NewReader("4\n"))
+	chosen1 := promptSortMode(r1)
+	if chosen1 != SortByDateDesc {
+		t.Errorf("Esperava SortByDateDesc (4), obtido %d", chosen1)
+	}
+	if saved := getSortMode(); saved != SortByDateDesc {
+		t.Errorf("Deveria ter persistido SortByDateDesc (4) no DB, mas obteve %d", saved)
+	}
+
+	// 2. Simular pressionar Enter (deve manter o padrão atual, que agora é SortByDateDesc)
+	r2 := bufio.NewReader(strings.NewReader("\n"))
+	chosen2 := promptSortMode(r2)
+	if chosen2 != SortByDateDesc {
+		t.Errorf("Ao pressionar Enter, esperava manter padrão SortByDateDesc (4), obtido %d", chosen2)
+	}
+
+	// 3. Simular escolha da opção "2" (SortBySizeDesc)
+	r3 := bufio.NewReader(strings.NewReader("2\n"))
+	chosen3 := promptSortMode(r3)
+	if chosen3 != SortBySizeDesc {
+		t.Errorf("Esperava SortBySizeDesc (2), obtido %d", chosen3)
+	}
+	if saved := getSortMode(); saved != SortBySizeDesc {
+		t.Errorf("Deveria ter persistido SortBySizeDesc (2) no DB, mas obteve %d", saved)
+	}
+
+	// 4. Enter novamente - agora deve ser SortBySizeDesc
+	r4 := bufio.NewReader(strings.NewReader("\n"))
+	chosen4 := promptSortMode(r4)
+	if chosen4 != SortBySizeDesc {
+		t.Errorf("Ao pressionar Enter, esperava manter padrão SortBySizeDesc (2), obtido %d", chosen4)
+	}
+}
 
 func TestReportFormatDB(t *testing.T) {
 	// Cria arquivo de DB temporário para o teste

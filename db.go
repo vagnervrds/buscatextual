@@ -277,6 +277,60 @@ func saveReportFormat(format string) error {
 	return err
 }
 
+func getSortMode() SortMode {
+	defaultSort := SortByFolder
+	if db == nil {
+		return defaultSort
+	}
+	var mode SortMode = defaultSort
+	_ = db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("AppConfig"))
+		if b == nil {
+			return nil
+		}
+		v := b.Get([]byte("sort_mode"))
+		if v != nil {
+			var val int
+			if err := json.Unmarshal(v, &val); err == nil {
+				s := SortMode(val)
+				if s >= SortByFolder && s <= SortByDateAsc {
+					mode = s
+				}
+			}
+		}
+		return nil
+	})
+	return mode
+}
+
+func saveSortMode(mode SortMode) error {
+	if db == nil {
+		err := fmt.Errorf("banco de dados nao inicializado")
+		LogError("Erro ao salvar sort_mode", err)
+		return err
+	}
+	if mode < SortByFolder || mode > SortByDateAsc {
+		err := fmt.Errorf("modo de ordenacao invalido: %d", mode)
+		LogError("Erro de validacao ao salvar sort_mode", err)
+		return err
+	}
+	err := db.Update(func(tx *bbolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte("AppConfig"))
+		if err != nil {
+			return err
+		}
+		buf, err := json.Marshal(int(mode))
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte("sort_mode"), buf)
+	})
+	if err != nil {
+		LogError("Falha ao persistir sort_mode no banco", err)
+	}
+	return err
+}
+
 // putIndexHelper é uma função auxiliar para salvar metadados em um bucket aberto
 func putIndexHelper(b *bbolt.Bucket, path string, size int64, modTimeStr string) error {
 	v := b.Get([]byte(path))

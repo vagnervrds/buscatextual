@@ -1233,6 +1233,7 @@ func realizarConfiguracoes(reader *bufio.Reader) {
 		currentLimit := getMaxSearchHistory()
 		currentFormat := getReportFormat()
 		currentMatchingMode := getMatchingMode()
+		currentSortMode := getSortMode()
 
 		execPath, err := os.Executable()
 		if err != nil {
@@ -1257,11 +1258,13 @@ func realizarConfiguracoes(reader *bufio.Reader) {
 		fmt.Printf(" Tamanho do banco de dados:  %s%s%s (buscatextual.db)\n", Bold+ThemeGreen, dbSizeStr, Reset)
 		fmt.Printf(" Limite de arquivos historico: %s%d%s (/resultados_busca)\n", Bold+ThemeGreen, currentLimit, Reset)
 		fmt.Printf(" Formato padrao do relatorio: %s%s%s\n", Bold+ThemeGreen, strings.ToUpper(currentFormat), Reset)
-		fmt.Printf(" Modo de busca (correspondencia): %s%s%s\n\n", Bold+ThemeGreen, modeDesc, Reset)
+		fmt.Printf(" Modo de busca (correspondencia): %s%s%s\n", Bold+ThemeGreen, modeDesc, Reset)
+		fmt.Printf(" Ordenacao padrao dos resultados: %s%s%s\n\n", Bold+ThemeGreen, getSortModeLabel(currentSortMode), Reset)
 		fmt.Printf("  "+ThemeYellow+"1"+Reset+" - Alterar limite de arquivos de historico\n")
 		fmt.Printf("  "+ThemeYellow+"2"+Reset+" - Alterar formato do relatorio (csv, json, toml)\n")
 		fmt.Printf("  "+ThemeYellow+"3"+Reset+" - Alterar modo de busca (ampla / exata)\n")
-		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Voltar ao menu principal\n")
+		fmt.Printf("  "+ThemeYellow+"4"+Reset+" - Alterar ordenacao padrao dos resultados\n")
+		fmt.Printf("  "+ThemeYellow+"5"+Reset+" - Voltar ao menu principal\n")
 		fmt.Println(Bold + ThemeCyan + "--------------------------------------------------" + Reset)
 
 		opcao := prompt(reader, Bold+"Escolha uma opcao: "+Reset)
@@ -1294,6 +1297,9 @@ func realizarConfiguracoes(reader *bufio.Reader) {
 			}
 			fmt.Printf(ThemeGreen+"Modo de busca alterado para '%s' com sucesso!\n"+Reset, modeLabel)
 		case "4":
+			newSort := promptSortMode(reader)
+			fmt.Printf(ThemeGreen+"Ordenacao dos resultados alterada para '%s' com sucesso!\n"+Reset, getSortModeLabel(newSort))
+		case "5":
 			return
 		default:
 			fmt.Println(Red + "Opcao invalida. Tente novamente." + Reset)
@@ -1365,34 +1371,65 @@ func formatSuffix(fmtOption string, current string) string {
 	return ""
 }
 
+func getSortModeLabel(mode SortMode) string {
+	switch mode {
+	case SortByFolder:
+		return "Por pasta/caminho"
+	case SortBySizeDesc:
+		return "Por tamanho (maior para o menor)"
+	case SortBySizeAsc:
+		return "Por tamanho (menor para o maior)"
+	case SortByDateDesc:
+		return "Por data de modificacao (mais recente)"
+	case SortByDateAsc:
+		return "Por data de modificacao (mais antiga)"
+	default:
+		return "Por pasta/caminho"
+	}
+}
+
+func sortModeSuffix(option SortMode, current SortMode) string {
+	if option == current {
+		return " " + Bold + ThemeGreen + "[padrao]" + Reset
+	}
+	return ""
+}
+
 func promptSortMode(reader *bufio.Reader) SortMode {
+	currentSort := getSortMode()
 	for {
 		fmt.Println()
 		fmt.Println(Bold + "Ordenacao dos resultados da busca:" + Reset)
-		fmt.Println("  1 - Por pasta/caminho [padrao]")
-		fmt.Println("  2 - Por tamanho (maior para o menor)")
-		fmt.Println("  3 - Por tamanho (menor para o maior)")
-		fmt.Println("  4 - Por data de modificacao (mais recente)")
-		fmt.Println("  5 - Por data de modificacao (mais antiga)")
+		fmt.Printf("  1 - Por pasta/caminho%s\n", sortModeSuffix(SortByFolder, currentSort))
+		fmt.Printf("  2 - Por tamanho (maior para o menor)%s\n", sortModeSuffix(SortBySizeDesc, currentSort))
+		fmt.Printf("  3 - Por tamanho (menor para o maior)%s\n", sortModeSuffix(SortBySizeAsc, currentSort))
+		fmt.Printf("  4 - Por data de modificacao (mais recente)%s\n", sortModeSuffix(SortByDateDesc, currentSort))
+		fmt.Printf("  5 - Por data de modificacao (mais antiga)%s\n", sortModeSuffix(SortByDateAsc, currentSort))
 
 		opcao := prompt(reader, Bold+"Escolha uma opcao (1-5 ou Enter para padrao): "+Reset)
+		opcao = strings.TrimSpace(opcao)
 		if opcao == "" {
-			return SortByFolder
+			_ = saveSortMode(currentSort)
+			return currentSort
 		}
+		var selected SortMode
 		switch opcao {
 		case "1":
-			return SortByFolder
+			selected = SortByFolder
 		case "2":
-			return SortBySizeDesc
+			selected = SortBySizeDesc
 		case "3":
-			return SortBySizeAsc
+			selected = SortBySizeAsc
 		case "4":
-			return SortByDateDesc
+			selected = SortByDateDesc
 		case "5":
-			return SortByDateAsc
+			selected = SortByDateAsc
 		default:
 			fmt.Println(Red + "Opcao invalida." + Reset)
+			continue
 		}
+		_ = saveSortMode(selected)
+		return selected
 	}
 }
 
@@ -1452,6 +1489,9 @@ func sortMatches(matches []Match, mode SortMode) {
 func runSearch(config SearchConfig) (SearchResult, error) {
 	if config.MatchingMode == "" {
 		config.MatchingMode = getMatchingMode()
+	}
+	if config.SortMode <= 0 {
+		config.SortMode = getSortMode()
 	}
 
 	// Pré-normaliza termos e filtros uma única vez antes de iniciar os workers

@@ -11,9 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -149,26 +147,20 @@ var (
 	activeSearchMatches   atomic.Int64
 )
 
-// openFolderInExplorer abre a pasta no Windows Explorer destacando o arquivo se aplicável
-func openFolderInExplorer(path string) error {
-	cleanPath := filepath.Clean(path)
-	switch runtime.GOOS {
-	case "windows":
-		fi, err := os.Stat(cleanPath)
-		if err == nil && fi.IsDir() {
-			return exec.Command("cmd", "/c", "start", "", cleanPath).Run()
-		}
-		// Se for arquivo ou caminho completo, usa /select para destacar o item no Explorer
-		return exec.Command("explorer.exe", fmt.Sprintf("/select,%s", cleanPath)).Run()
-	case "darwin":
-		return exec.Command("open", "-R", cleanPath).Run()
-	default: // linux e outros
-		dir := cleanPath
-		if fi, err := os.Stat(cleanPath); err == nil && !fi.IsDir() {
-			dir = filepath.Dir(cleanPath)
-		}
-		return exec.Command("xdg-open", dir).Run()
+// openFolderInExplorer abre a pasta no gerenciador de arquivos (Windows Explorer) destacando o arquivo se aplicável.
+// Primeiro resolve o caminho (inclusive se estiver em unidade de rede mapeada com letra diferente).
+// Se o caminho não existir, retorna erro sem invocar o Explorer, prevenindo abertura indevida de "Meus Documentos".
+func openFolderInExplorer(path string) (string, error) {
+	resolvedPath, found := resolvePath(path)
+	if !found {
+		return "", fmt.Errorf("caminho não encontrado ou unidade não acessível no sistema: %s", path)
 	}
+
+	if err := launchNativeFolderViewer(resolvedPath); err != nil {
+		return resolvedPath, fmt.Errorf("erro ao abrir gerenciador de arquivos: %w", err)
+	}
+
+	return resolvedPath, nil
 }
 
 // parseCSVReport lê o arquivo CSV do disco sob demanda e extrai metadados e linhas
@@ -462,7 +454,11 @@ func detectFileCategory(path string) (category string, mimeType string) {
 
 // buildFilePreview gera a resposta estruturada para o modal de preview
 func buildFilePreview(filePath string, lineNum int) (*FilePreviewResponse, error) {
-	cleanPath := filepath.Clean(filePath)
+	resolvedPath, found := resolvePath(filePath)
+	if !found {
+		return nil, fmt.Errorf("arquivo nao encontrado: %s", filePath)
+	}
+	cleanPath := filepath.Clean(resolvedPath)
 	info, err := os.Stat(cleanPath)
 	if err != nil {
 		return nil, fmt.Errorf("arquivo nao encontrado: %w", err)
@@ -609,8 +605,17 @@ func startTableViewerServer() (string, error) {
 			return
 		}
 
-		go openFile(req.Path)
-		_ = json.NewEncoder(w).Encode(ActionResponse{Success: true, Message: fmt.Sprintf("Arquivo aberto: %s", req.Path)})
+		resolvedPath, found := resolvePath(req.Path)
+		if !found {
+			_ = json.NewEncoder(w).Encode(ActionResponse{
+				Success: false,
+				Error:   fmt.Sprintf("Arquivo não encontrado no sistema: %s", req.Path),
+			})
+			return
+		}
+
+		go openFile(resolvedPath)
+		_ = json.NewEncoder(w).Encode(ActionResponse{Success: true, Message: fmt.Sprintf("Arquivo aberto: %s", resolvedPath)})
 	})
 
 	// API: Abrir pasta no Explorer / gerenciador de arquivos
@@ -629,10 +634,19 @@ func startTableViewerServer() (string, error) {
 			return
 		}
 
-		go func() {
-			_ = openFolderInExplorer(req.Path)
-		}()
-		_ = json.NewEncoder(w).Encode(ActionResponse{Success: true, Message: fmt.Sprintf("Pasta aberta: %s", req.Path)})
+		resolvedPath, err := openFolderInExplorer(req.Path)
+		if err != nil {
+			_ = json.NewEncoder(w).Encode(ActionResponse{
+				Success: false,
+				Error:   err.Error(),
+			})
+			return
+		}
+
+		_ = json.NewEncoder(w).Encode(ActionResponse{
+			Success: true,
+			Message: fmt.Sprintf("Pasta aberta no Explorer: %s", resolvedPath),
+		})
 	})
 
 	// API: Visualizador / Preview estruturado de arquivos
@@ -669,7 +683,13 @@ func startTableViewerServer() (string, error) {
 			return
 		}
 
-		cleanPath := filepath.Clean(filePath)
+		resolvedPath, found := resolvePath(filePath)
+		if !found {
+			http.Error(w, "Arquivo nao encontrado", http.StatusNotFound)
+			return
+		}
+
+		cleanPath := filepath.Clean(resolvedPath)
 		if _, err := os.Stat(cleanPath); err != nil {
 			http.Error(w, "Arquivo nao encontrado", http.StatusNotFound)
 			return
@@ -847,7 +867,7 @@ func executeWebSearch(req WebSearchRequest) {
 			NegativeFilter: req.NegFilter,
 			TargetType:     targetType,
 			Mode:           ModeName,
-			SortMode:       SortByFolder,
+			SortMode:       getSortMode(),
 			ReportFormat:   "csv",
 			MatchingMode:   matchingMode,
 		}
@@ -886,7 +906,7 @@ func executeWebSearch(req WebSearchRequest) {
 		PositiveFilter: req.PosFilter,
 		NegativeFilter: req.NegFilter,
 		TargetType:     targetType,
-		SortMode:       SortByFolder,
+		SortMode:       getSortMode(),
 		ReportFormat:   "csv",
 		MatchingMode:   matchingMode,
 	}

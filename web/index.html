@@ -2274,9 +2274,9 @@
         });
         const data = await res.json();
         if (data.success) {
-          showToast('✓ Arquivo aberto no programa padrão!', 'success');
+          showToast(data.message || '✓ Arquivo aberto no programa padrão!', 'success');
         } else {
-          showToast('Erro: ' + (data.error || 'Desconhecido'), 'error');
+          showToast('⚠️ ' + (data.error || 'Não foi possível abrir o arquivo'), 'error');
         }
       } catch (err) {
         showToast('Erro de requisição: ' + err.message, 'error');
@@ -2293,9 +2293,9 @@
         });
         const data = await res.json();
         if (data.success) {
-          showToast('✓ Pasta aberta com sucesso no Explorer!', 'success');
+          showToast(data.message || '✓ Pasta aberta com sucesso no Explorer!', 'success');
         } else {
-          showToast('Erro: ' + (data.error || 'Desconhecido'), 'error');
+          showToast('⚠️ ' + (data.error || 'Não foi possível abrir a pasta'), 'error');
         }
       } catch (err) {
         showToast('Erro de requisição: ' + err.message, 'error');
