@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 )
 
 //go:embed web/index.html
@@ -96,6 +97,7 @@ type WebSearchRequest struct {
 	Type         string   `json:"type"` // "disk" ou "db"
 	BaseDir      string   `json:"baseDir"`
 	Terms        []string `json:"terms"`
+	SplitWords   bool     `json:"splitWords"`
 	Mode         int      `json:"mode"`       // 1: Nome, 2: Conteudo, 3: Ambos
 	TargetType   int      `json:"targetType"` // 0: Arquivos, 1: Diretorios
 	PosFilter    []string `json:"posFilter"`
@@ -849,9 +851,28 @@ func executeWebSearch(req WebSearchRequest) {
 		searchMode = ModeBoth
 	}
 
+	terms := req.Terms
+	if req.SplitWords {
+		var splitted []string
+		for _, t := range terms {
+			parts := strings.FieldsFunc(t, func(c rune) bool {
+				return c == ';' || unicode.IsSpace(c)
+			})
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if p != "" {
+					splitted = append(splitted, p)
+				}
+			}
+		}
+		if len(splitted) > 0 {
+			terms = splitted
+		}
+	}
+
 	if req.Type == "db" {
 		// Busca Rápida no Banco
-		matches := searchFilenamesInDB(req.Terms, req.PosFilter, req.NegFilter, matchingMode)
+		matches := searchFilenamesInDB(terms, req.PosFilter, req.NegFilter, matchingMode)
 		if targetType == TargetDirectories {
 			matches = convertToUniqueDirectoryMatches(matches)
 		}
@@ -862,7 +883,7 @@ func executeWebSearch(req WebSearchRequest) {
 
 		config := SearchConfig{
 			BaseDir:        "Banco de Dados",
-			Terms:          req.Terms,
+			Terms:          terms,
 			PositiveFilter: req.PosFilter,
 			NegativeFilter: req.NegFilter,
 			TargetType:     targetType,
@@ -902,7 +923,7 @@ func executeWebSearch(req WebSearchRequest) {
 	config := SearchConfig{
 		BaseDir:        baseDir,
 		Mode:           searchMode,
-		Terms:          req.Terms,
+		Terms:          terms,
 		PositiveFilter: req.PosFilter,
 		NegativeFilter: req.NegFilter,
 		TargetType:     targetType,

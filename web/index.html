@@ -1314,8 +1314,14 @@
             <input type="text" id="search-base-dir" placeholder="Ex: C:\MeusProjetos ou . para pasta atual" value=".">
           </div>
 
-          <label for="search-terms">Termos de Busca (separados por ';'):</label>
-          <input type="text" id="search-terms" placeholder="Ex: relatorio; cliente; erro" required>
+          <label for="search-terms">Termos de Busca:</label>
+          <input type="text" id="search-terms" placeholder="Ex: orcamento carlos ou relatorio; cliente" required>
+          <div style="margin-top: 6px; margin-bottom: 15px;">
+            <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.88rem; font-weight: normal; margin-bottom: 0; user-select: none;">
+              <input type="checkbox" id="search-split-words" style="cursor: pointer; width: 16px; height: 16px; margin: 0;">
+              <span>Dividir por espaço (buscar qualquer uma das palavras)</span>
+            </label>
+          </div>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
             <div id="field-mode">
@@ -2009,6 +2015,11 @@
       openModal('modalNewSearch');
       document.getElementById('search-form-alert').style.display = 'none';
       switchSearchTab('db');
+      const savedSplit = localStorage.getItem('bt_split_words');
+      if (savedSplit !== null) {
+        const chk = document.getElementById('search-split-words');
+        if (chk) chk.checked = (savedSplit === 'true');
+      }
       setTimeout(() => {
         const termsInput = document.getElementById('search-terms');
         if (termsInput) termsInput.focus();
@@ -2043,7 +2054,23 @@
         return;
       }
 
-      const terms = termsRaw.split(';').map(t => t.trim()).filter(t => t.length > 0);
+      const splitWords = document.getElementById('search-split-words').checked;
+      localStorage.setItem('bt_split_words', splitWords ? 'true' : 'false');
+
+      let terms = [];
+      if (splitWords) {
+        // Quebra tanto por ';' quanto por espaços em branco
+        terms = termsRaw.split(/[\s;]+/).map(t => t.trim()).filter(t => t.length > 0);
+      } else {
+        // Modo frase/string inteira: quebra apenas por ';'
+        terms = termsRaw.split(';').map(t => t.trim()).filter(t => t.length > 0);
+      }
+
+      if (terms.length === 0) {
+        showToast('Informe ao menos um termo de busca válido', 'error');
+        return;
+      }
+
       const posFilter = document.getElementById('search-pos-filter').value.split(';').map(t => t.trim()).filter(t => t.length > 0);
       const negFilter = document.getElementById('search-neg-filter').value.split(';').map(t => t.trim()).filter(t => t.length > 0);
 
@@ -2054,6 +2081,7 @@
         type: appState.activeSearchType,
         baseDir: baseDirVal,
         terms: terms,
+        splitWords: splitWords,
         mode: parseInt(document.getElementById('search-mode').value, 10),
         targetType: parseInt(document.getElementById('search-target').value, 10),
         posFilter: posFilter,

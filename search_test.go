@@ -147,3 +147,39 @@ func TestRunSearchStressDeadlockImmunity(t *testing.T) {
 		_ = os.Remove(result.ReportPath)
 	}
 }
+
+func TestParseSearchTerms(t *testing.T) {
+	// 1. Modo Frase Inteira (splitWords = false)
+	termsFalse := parseSearchTerms("orcamento carlos; relatorio financeiro", false)
+	if len(termsFalse) != 2 {
+		t.Fatalf("Esperava 2 termos com splitWords=false, obteve %d", len(termsFalse))
+	}
+	if termsFalse[0] != "orcamento carlos" || termsFalse[1] != "relatorio financeiro" {
+		t.Errorf("Termos inesperados com splitWords=false: %v", termsFalse)
+	}
+
+	// 2. Modo Palavras Avulsas (splitWords = true)
+	termsTrue := parseSearchTerms("orcamento carlos; relatorio financeiro", true)
+	if len(termsTrue) != 4 {
+		t.Fatalf("Esperava 4 termos com splitWords=true, obteve %d (%v)", len(termsTrue), termsTrue)
+	}
+	expected := []string{"orcamento", "carlos", "relatorio", "financeiro"}
+	for i, exp := range expected {
+		if termsTrue[i] != exp {
+			t.Errorf("Indice %d: esperava %q, obteve %q", i, exp, termsTrue[i])
+		}
+	}
+
+	// 3. String com espacos extras e delimitadores
+	termsExtra := parseSearchTerms("  um   dois ;  tres   quatro  ", true)
+	if len(termsExtra) != 4 || termsExtra[0] != "um" || termsExtra[1] != "dois" || termsExtra[2] != "tres" || termsExtra[3] != "quatro" {
+		t.Errorf("Resultado inesperado com espacos extras: %v", termsExtra)
+	}
+
+	// 4. String vazia
+	termsEmpty := parseSearchTerms("   ", true)
+	if len(termsEmpty) != 0 {
+		t.Errorf("Esperava lista vazia para espacos em branco, obteve: %v", termsEmpty)
+	}
+}
+

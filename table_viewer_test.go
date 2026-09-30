@@ -205,3 +205,28 @@ func main() {
 		t.Errorf("Esperava pdf, obteve %s", cat)
 	}
 }
+
+func TestWebSearchRequestJSON(t *testing.T) {
+	jsonPayload := `{
+		"type": "db",
+		"baseDir": ".",
+		"terms": ["orcamento carlos"],
+		"splitWords": true,
+		"mode": 3,
+		"targetType": 0,
+		"matchingMode": "ampla"
+	}`
+
+	var req WebSearchRequest
+	if err := json.Unmarshal([]byte(jsonPayload), &req); err != nil {
+		t.Fatalf("Erro ao decodificar JSON do WebSearchRequest: %v", err)
+	}
+
+	if !req.SplitWords {
+		t.Errorf("Esperava SplitWords = true")
+	}
+	if len(req.Terms) != 1 || req.Terms[0] != "orcamento carlos" {
+		t.Errorf("Terms incorreto: %v", req.Terms)
+	}
+}
+

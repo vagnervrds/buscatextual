@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode"
 	"unsafe"
 )
 
@@ -1133,8 +1134,25 @@ func promptMode(reader *bufio.Reader) SearchMode {
 	}
 }
 
-func promptTerms(reader *bufio.Reader) []string {
-	raw := prompt(reader, Bold+"Informe os termos de busca separados por ';' (ex: erro;cliente): "+Reset)
+// parseSearchTerms extrai termos de busca da string informada.
+// Se splitWords for true, quebra por espacos e ';', buscando qualquer uma das palavras individuais (OR).
+// Se splitWords for false, mantem frases e expressoes contiguas intactas (separa apenas por ';').
+func parseSearchTerms(raw string, splitWords bool) []string {
+	if splitWords {
+		f := func(c rune) bool {
+			return c == ';' || unicode.IsSpace(c)
+		}
+		parts := strings.FieldsFunc(raw, f)
+		terms := make([]string, 0, len(parts))
+		for _, part := range parts {
+			term := strings.TrimSpace(part)
+			if term != "" {
+				terms = append(terms, term)
+			}
+		}
+		return terms
+	}
+
 	parts := strings.Split(raw, ";")
 	terms := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -1144,6 +1162,19 @@ func promptTerms(reader *bufio.Reader) []string {
 		}
 	}
 	return terms
+}
+
+func promptTerms(reader *bufio.Reader) []string {
+	raw := prompt(reader, Bold+"Informe os termos de busca (ex: orcamento carlos ou erro;cliente): "+Reset)
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	ans := prompt(reader, Bold+"Dividir termos por espaco (qualquer palavra)? (s/N ou Enter para frase inteira): "+Reset)
+	ans = strings.ToLower(strings.TrimSpace(ans))
+	splitWords := ans == "s" || ans == "sim" || ans == "y" || ans == "yes"
+
+	return parseSearchTerms(raw, splitWords)
 }
 
 func promptPositiveFilter(reader *bufio.Reader) []string {
